@@ -71,7 +71,8 @@ EFFECTOR_DOC = (
     "frame 1), inheritance (params Source = another cloner, Inherit Color: clones morph into the source's "
     "arrangement; animate Strength), sound (params Sound = sound name or audio file path, Mode Spread (each "
     "clone its own log-spaced band between Low and High Hz) or All, Gain, Time Offset). The effector "
-    "object's scale is the falloff size. Common params: Strength, Position, Rotation, Scale (added, -1 = vanish), Uniform Scale, Color, Color Mix, Local Space, Falloff, Inner, Invert.")
+    "object's scale is the falloff size. Common params: Strength, Position, Rotation, Scale (added, "
+    "-1 = vanish), Uniform Scale, Color, Color Mix, Local Space, Falloff, Inner, Invert.")
 
 TOOLS = [
     tool("status", "Check that Blender with MoBlend is reachable; returns Blender version and file.", cmd="ping"),
