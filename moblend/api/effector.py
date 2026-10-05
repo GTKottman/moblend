@@ -45,8 +45,9 @@ def _is_effector_mod(m):
 
 
 def _is_post_mod(m):
-    """Modifiers that must stay below effectors: deformers and the tracer."""
-    return m.type == "SIMPLE_DEFORM" or m.name.startswith((MOD_NAMES["tracer"], DEFORMER_MOD_PREFIX))
+    """Modifiers that must stay below effectors: deformers, the tracer and the viewport display."""
+    return m.type == "SIMPLE_DEFORM" or m.name.startswith((MOD_NAMES["tracer"], MOD_NAMES["display"],
+                                                          DEFORMER_MOD_PREFIX))
 
 
 def link_effector(effector, target):

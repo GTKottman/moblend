@@ -11,7 +11,7 @@ import bpy
 from ..catalog import KEY_VERSION
 
 # Bump when any group's nodes or interface change; stale groups are rebuilt in place.
-GROUP_VERSION = 24
+GROUP_VERSION = 26
 
 _SOCKET_TYPES = {
     "GEOMETRY": "NodeSocketGeometry", "FLOAT": "NodeSocketFloat", "INT": "NodeSocketInt",
@@ -135,7 +135,8 @@ class B:
         self.set(n, "Index", index)
         items = [s for s in n.inputs if s.identifier.startswith("Item_")]
         for s, v in zip(items, values, strict=True):
-            self.assign(s, v)
+            if v is not None:  # None leaves the item empty (e.g. "no geometry")
+                self.assign(s, v)
         return n.outputs[0]
 
     def menu(self, items, menu_input, dtype="INT", values=None):

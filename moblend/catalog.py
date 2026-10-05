@@ -9,7 +9,7 @@ import tempfile
 
 VERSION = "0.2.0"  # bl_info and blender_manifest.toml must match (Blender reads them as literals; a test checks)
 
-CLONER_MODES = ("linear", "radial", "grid", "object", "spline")
+CLONER_MODES = ("linear", "radial", "grid", "honeycomb", "object", "spline")
 EFFECTOR_TYPES = ("plain", "random", "step", "noise", "wave", "time", "target", "delay", "inheritance", "sound",
                   "formula", "shader", "spline", "volume", "push_apart")
 FALLOFF_SHAPES = ("Infinite", "Sphere", "Box", "Cylinder", "Cone", "Capsule", "Torus", "Linear", "Radial", "Noise",

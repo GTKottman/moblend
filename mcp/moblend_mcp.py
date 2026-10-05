@@ -84,12 +84,30 @@ TOOLS = [
     tool("create_cloner",
          "Create a Cloner (C4D-style). Children are cloned from the given objects (moved into a hidden "
          "source collection, like C4D children); a cube is used when none are given. Modes and params: "
-         "linear (Count, Offset, Step Rotation, Step Scale); radial (Count, Radius, Plane XY/XZ/YZ, "
-         "Start Angle, End Angle, Align); grid (Count X/Y/Z, Spacing, Shape Cube/Sphere/Cylinder, "
-         "Honeycomb); object (Object, Distribution Vertices/Faces/Surface, Count, Align); spline (Curve, "
-         "Count, Offset 0..1 animatable, Spread, Align). All: Order Iterate/Random, Seed.",
+         "linear (Count, Offset, Mode Per Step/End Point, Amount, Start Offset, Step Rotation, Step Scale, Scale "
+         "Step, Step Size, Step Curve, Step Mode Cumulative/Single Value); radial (Count, Radius, Plane, Start/End "
+         "Angle, Offset, Offset Variation, Align); grid (Count X/Y/Z, Spacing, Mode, Shape Cube/Sphere/Cylinder/"
+         "Object + Object, Fill, Honeycomb); honeycomb (Count Width/Height, Size Width/Height, Mode, Orientation, "
+         "Offset Direction, Offset, Offset Variation, Perpendicular Variation, Form Square/Circle); object "
+         "(Object, Distribution Vertices/Edges/Faces/Surface/Volume/Axis/Instances, Count, Selection (vertex "
+         "group), Align, Up Vector, Scale by Area); spline (Curve, Count, Offset, Spread, Align). All: Order "
+         "Iterate/Random/Blend (morph between same-topology children), Seed. Viewport display: set_params "
+         "'MB Display/Viewport' Object/Bounding Box/Points/Off.",
          {"mode": enum(C.CLONER_MODES), "objects": names("Objects to clone"), "name": STR, "params": PARAMS,
           "location": VEC}, ["mode"]),
+    tool("create_matrix", "Matrix object: a cloner that only provides positions (boxes in the viewport, never "
+         "rendered). Effectors work on it; Object-mode cloners clone onto it with Distribution Instances.",
+         {"mode": enum(C.CLONER_MODES), "name": STR, "params": PARAMS, "location": VEC}),
+    tool("set_clone_selection", "MoGraph Selection tag: which clones effectors with 'Use MoGraph Selection' "
+         "affect. indices: list or pattern like '0-3, 7, 10-20:2'.",
+         {"cloner": OBJ, "indices": {"description": "List of ints or pattern string"}}, ["cloner", "indices"]),
+    tool("set_clone_weights", "MoGraph Weightmap: per-clone weights (list in clone order or {index: weight}); "
+         "effectors with 'Use Weight' multiply by it.",
+         {"cloner": OBJ, "weights": {"description": "List or object"}}, ["cloner", "weights"]),
+    tool("hide_selected_clones", "Hide the clones in the cloner's MoGraph Selection (adds a Plain effector).",
+         {"cloner": OBJ}, ["cloner"]),
+    tool("make_matrix", "Swap Cloner/Matrix: matrix=true makes a cloner positions-only, false back to clones.",
+         {"cloner": OBJ, "matrix": {"type": "boolean"}}, ["cloner"]),
     tool("set_cloner_mode", "Switch an existing cloner's mode.", {"cloner": OBJ, "mode": enum(C.CLONER_MODES)},
          ["cloner", "mode"]),
     tool("add_clone_objects", "Add more objects to a cloner's children (cycled through by Order).",

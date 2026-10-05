@@ -133,6 +133,13 @@ def add_nodes_modifier(o, name, group, first=False):
     return m
 
 
+def keep_last(o, name):
+    """Move modifier `name` (if present) to the end of the stack. O(M)."""
+    i = o.modifiers.find(name)
+    if 0 <= i < len(o.modifiers) - 1:
+        o.modifiers.move(i, len(o.modifiers) - 1)
+
+
 def mb_modifiers(o):
     """MoBlend generator modifiers (cloner, MoText, Sweep, Fracture, Tracer), in stack order."""
     return [m for m in o.modifiers

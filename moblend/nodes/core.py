@@ -76,6 +76,10 @@ SELECTION_INPUTS = [
     S("Select Offset", "INT", 0, desc="Shift the Every pattern"),
     S("Invert Selection", "BOOL", False),
 ]
+SELECTION_INPUTS += [
+    S("Use MoGraph Selection", "BOOL", False, desc="Only clones in the cloner's MoGraph Selection tag"),
+    S("Use Weight", "BOOL", False, desc="Multiply by the clones' MoGraph weight"),
+]
 SELECTION_NAMES = frozenset(s["name"] for s in SELECTION_INPUTS)
 RANGE_INPUTS = [S("Minimum", "FLOAT", 0.0, desc="Effect where the falloff is 0"),
                 S("Maximum", "FLOAT", 1.0, desc="Effect where the falloff is 1")]
@@ -91,7 +95,10 @@ def _selection(b, g):
     on_step = b.math("LESS_THAN", b.math("FLOORED_MODULO", b.math("SUBTRACT", idx, g["Select Offset"]),
                                          b.at_least(g["Select Every"])), 0.5)
     sel = b.math("MULTIPLY", b.math("MULTIPLY", after_from, before_to), on_step)
-    return b.mix("FLOAT", g["Invert Selection"], sel, b.math("SUBTRACT", 1.0, sel))
+    tag = b.mix("FLOAT", g["Use MoGraph Selection"], 1.0, b.named("mb_selection", "FLOAT"))
+    sel = b.math("MULTIPLY", sel, tag)
+    sel = b.mix("FLOAT", g["Invert Selection"], sel, b.math("SUBTRACT", 1.0, sel))
+    return b.math("MULTIPLY", sel, b.mix("FLOAT", g["Use Weight"], 1.0, b.named("mb_weight", "FLOAT")))
 
 
 def falloff_group(name, geo_name, extra, body, falloff_default="Sphere", menus=None, desc="", selection=False):
@@ -186,7 +193,7 @@ def apply():
              S("Position", "VECTOR", (0, 0, 0)), S("Rotation", "VECTOR", (0, 0, 0)),
              S("Scale", "VECTOR", (0, 0, 0)), S("Color", "COLOR", WHITE),
              S("Color Mix", "FLOAT", 0.0), S("Local Space", "BOOL", True), S("Visibility", "BOOL", False),
-             S("Deformation", "MENU")],
+             S("Deformation", "MENU"), S("Weight Transform", "FLOAT", 0.0)],
             [S("Instances", "GEOMETRY")],
             "Weighted position/rotation/scale/color change on instances (and meshes via Deformation)",
         )
@@ -206,7 +213,10 @@ def apply():
             geo = b.node("GeometryNodeScaleInstances", {"Instances": geo, "Scale": s, "Local Space": True}).outputs[0]
             col = b.mix("RGBA", b.math("MULTIPLY", w, g["Color Mix"]), b.named(COLOR_ATTR, "FLOAT_COLOR"),
                         g["Color"])
-            return b.store(geo, COLOR_ATTR, col, "FLOAT_COLOR", "INSTANCE")
+            geo = b.store(geo, COLOR_ATTR, col, "FLOAT_COLOR", "INSTANCE")
+            # C4D Weight Transform: effectors raise or lower clones' weight for the effectors after them.
+            weight = b.math("MULTIPLY_ADD", g["Weight Transform"], w, b.named("mb_weight", "FLOAT"))
+            return b.store(geo, "mb_weight", weight, "FLOAT", "INSTANCE")
 
         parts = b.node("GeometryNodeSeparateComponents", {"Geometry": g["Instances"]})
         mesh = out(parts, "Mesh")
@@ -230,14 +240,69 @@ def apply():
     return ensure("MB Apply", build)
 
 
+CLONE_ORDERS = ("Iterate", "Random", "Blend")
+SELECTION_TAG, WEIGHT_TAG = "MoGraph Selection", "MoGraph Weight"  # vertex groups on the cloner's own mesh
+
+
+def _child(b, children, k):
+    """Child k of the clone collection as real geometry. O(child elements)."""
+    keep = b.compare(b.index(), k)
+    only = b.node("GeometryNodeDeleteGeometry", {"Geometry": children, "Selection": b.bool_not(keep)},
+                  domain="INSTANCE").outputs[0]
+    return b.node("GeometryNodeRealizeInstances", {"Geometry": only}).outputs[0]
+
+
+def _blend(b, points, children, transform):
+    """Blend mode: clone i morphs between neighbouring children at t = i/(n-1) * (children-1).
+
+    Children with equal vertex counts morph point by point; others switch at the halfway mark.
+    O(clones x child vertices) via a For Each Element zone.
+    """
+    n_children = b.instance_count(children)
+    n_points = out(b.node("GeometryNodeAttributeDomainSize", {"Geometry": points}, component="POINTCLOUD"),
+                   "Point Count")
+    t = b.math("MULTIPLY", b.math("DIVIDE", b.index(), b.steps(n_points)),
+               b.at_least(b.math("SUBTRACT", n_children, 1.0), 0.0))
+    pts = b.store(points, "mb_t", t, "FLOAT", "POINT")
+    fe_in = b.node("GeometryNodeForeachGeometryElementInput")
+    fe_out = b.node("GeometryNodeForeachGeometryElementOutput")
+    fe_in.pair_with_output(fe_out)
+    fe_out.domain = "POINT"
+    b.link(pts, fe_in.inputs["Geometry"])
+    i = fe_in.outputs["Index"]
+    ti = b.node("GeometryNodeSampleIndex", {"Geometry": pts, "Value": b.named("mb_t", "FLOAT"), "Index": i},
+                data_type="FLOAT", domain="POINT").outputs[0]
+    k = b.math("FLOOR", ti)
+    f = b.math("SUBTRACT", ti, k)
+    a = _child(b, children, k)
+    last = b.at_least(b.math("SUBTRACT", n_children, 1.0), 0.0)
+    c = _child(b, children, b.math("MINIMUM", b.math("ADD", k, 1.0), last))
+
+    def vertex_count(geo):
+        return out(b.node("GeometryNodeAttributeDomainSize", {"Geometry": geo}, component="MESH"), "Point Count")
+
+    other = b.node("GeometryNodeSampleIndex", {"Geometry": c, "Value": b.position(), "Index": b.index()},
+                   data_type="FLOAT_VECTOR", domain="POINT").outputs[0]
+    morph = b.node("GeometryNodeSetPosition", {"Geometry": a, "Position": b.mix("VECTOR", f, b.position(), other)}
+                   ).outputs[0]
+    nearest = b.switch("GEOMETRY", b.math("GREATER_THAN", f, 0.5), a, c)
+    shape = b.switch("GEOMETRY", b.compare(vertex_count(a), vertex_count(c)), nearest, morph)
+    b.link(b.node("GeometryNodeGeometryToInstance", {"Geometry": shape}).outputs[0],
+           [s for s in fe_out.inputs if s.type == "GEOMETRY"][-1])
+    generated = [s for s in fe_out.outputs if s.type == "GEOMETRY"][-1]
+    placed = b.node("GeometryNodeSampleIndex", {"Geometry": points, "Value": transform, "Index": b.index()},
+                    data_type="FLOAT4X4", domain="POINT").outputs[0]
+    return b.node("GeometryNodeSetInstanceTransform", {"Instances": generated, "Transform": placed}).outputs[0]
+
+
 def instancer():
     def build():
         ng, gin, gout, b = new_group(
             "MB Instancer",
             [S("Points", "GEOMETRY"), S("Rotation", "ROTATION"), S("Scale", "VECTOR", (1, 1, 1)),
-             S("Collection", "COLLECTION"), S("Order", "MENU"), S("Seed", "INT", 0)],
+             S("Collection", "COLLECTION"), S("Order", "MENU"), S("Seed", "INT", 0), S("Data", "GEOMETRY")],
             [S("Instances", "GEOMETRY")],
-            "Instances a collection's children on points, iterating or random",
+            "Instances a collection's children on points (iterate, random or blend) and attaches per-clone data",
         )
         g = gin.outputs
         coll = b.node("GeometryNodeCollectionInfo", {"Collection": g["Collection"], "Separate Children": True,
@@ -247,11 +312,22 @@ def instancer():
         coll = b.node("GeometryNodeSetInstanceTransform",
                       {"Instances": coll, "Transform": b.combine_transform(r=rot, s=scale)}).outputs[0]
         rnd = b.rand("INT", 0, 100000, seed=g["Seed"])
-        pick = b.index_switch("INT", b.menu(["Iterate", "Random"], g["Order"]), [b.index(), rnd])
-        geo = b.node("GeometryNodeInstanceOnPoints", {
+        order = b.menu(CLONE_ORDERS, g["Order"])
+        pick = b.index_switch("INT", order, [b.index(), rnd, b.index()])
+        picked = b.node("GeometryNodeInstanceOnPoints", {
             "Points": g["Points"], "Instance": coll, "Pick Instance": True, "Instance Index": pick,
             "Rotation": g["Rotation"], "Scale": g["Scale"]}).outputs[0]
-        b.link(init_color(b, geo), gout.inputs[0])
+        transform = b.combine_transform(b.position(), g["Rotation"], g["Scale"])
+        geo = b.index_switch("GEOMETRY", order, [picked, picked, _blend(b, g["Points"], coll, transform)])
+        geo = init_color(b, geo)
+        # Per-clone data from the cloner's own mesh: vertex i holds clone i's selection / weight tags.
+        # A missing tag (or a clone index beyond the data points) reads as 0.
+        for tag, attr in ((SELECTION_TAG, "mb_selection"), (WEIGHT_TAG, "mb_weight")):
+            value = b.node("GeometryNodeSampleIndex", {"Geometry": g["Data"], "Value": b.named(tag, "FLOAT"),
+                                                       "Index": b.index()}, data_type="FLOAT", domain="POINT")
+            geo = b.store(geo, attr, value.outputs[0], "FLOAT", "INSTANCE")
+        geo = b.store(geo, "mb_index", b.index(), "FLOAT", "INSTANCE")
+        b.link(geo, gout.inputs[0])
         set_menu_defaults(ng, {"Order": "Iterate"})
         return ng
     return ensure("MB Instancer", build)

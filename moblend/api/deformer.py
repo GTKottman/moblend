@@ -5,8 +5,9 @@ import math
 from ..catalog import (DEFORMER_GROUP_PREFIX, DEFORMER_MOD_PREFIX, DEFORMER_TYPES, KEY_AXIS, KEY_GROUP, KEY_KIND,
                        KEY_TYPE, SIMPLE_DEFORMERS, Kind, AXES)
 from ..nodes import deformers
-from .objects import (add_nodes_modifier, choice, get_object, get_objects, make_wrapper, mb_kind, new_empty,
-                      select_only, tag)
+from .generator import LAST
+from .objects import (add_nodes_modifier, choice, get_object, get_objects, keep_last, make_wrapper, mb_kind,
+                      new_empty, select_only, tag)
 from .params import set_params
 
 # Simple deformer types -> (custom property, default, UI options).
@@ -46,6 +47,7 @@ def attach_deformer(deformer, target):
     name = f"{DEFORMER_MOD_PREFIX}{d.name}"
     if mb_kind(d) != Kind.SIMPLE_DEFORMER:
         add_nodes_modifier(t, name, d[KEY_GROUP])
+        keep_last(t, LAST)
         return t
     m = t.modifiers.new(name, "SIMPLE_DEFORM")
     m.deform_method, m.origin, m.deform_axis = SIMPLE_DEFORMERS[d[KEY_TYPE]], d, d.get(KEY_AXIS, "Z")
@@ -55,4 +57,5 @@ def attach_deformer(deformer, target):
     var = drv.variables.new()
     var.targets[0].id = d
     var.targets[0].data_path = f'["{key}"]'
+    keep_last(t, LAST)
     return t

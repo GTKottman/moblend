@@ -8,7 +8,9 @@ from ..catalog import SOURCES_COLLECTION as SOURCES  # noqa: F401
 from .objects import get_object, mb_kind, users_of  # noqa: F401
 from .params import Param, get_params, list_params, parse_color, set_params  # noqa: F401
 from .material import assign as assign_material, mograph_material, set_color_material, solid_material  # noqa: F401
-from .cloner import add_clone_objects, create_cloner, set_cloner_mode  # noqa: F401
+from .cloner import add_clone_objects, create_cloner, create_matrix, set_cloner_mode  # noqa: F401
+from .selection import (clone_positions, hide_selected_clones, is_matrix, make_matrix, parse_indices,  # noqa: F401
+                        selection_from_edit_mode, set_clone_selection, set_clone_weights, sync_clone_points)
 from .effector import (add_effector, add_group_effector, effectors_of, group_members, link_effector,  # noqa: F401
                        move_effector, unlink_effector)
 from .deformer import add_deformer, attach_deformer  # noqa: F401

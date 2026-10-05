@@ -7,18 +7,21 @@ import bpy
 from ..catalog import AXES, KEY_KIND, KEY_VOLUME_SETS, Kind
 from ..nodes import generators
 from .material import mograph_material
-from .objects import (add_nodes_modifier, choice, get_object, get_objects, move_to_collection, new_mesh_object,
-                      select_only, sources_root, tag)
+from .objects import (add_nodes_modifier, choice, get_object, get_objects, keep_last, move_to_collection,
+                      new_mesh_object, select_only, sources_root, tag)
 from .params import set_params
 
 
 # Modifier name of each node-group generator.
 MOD_NAMES = {"motext": "MB MoText", "sweep": "MB Sweep", "fracture": "MB Fracture", "tracer": "MB Tracer",
-             "volume": "MB Volume Builder"}
+             "volume": "MB Volume Builder", "display": "MB Display"}
+LAST = MOD_NAMES["display"]  # always the last modifier: it only swaps what the viewport shows
 
 
 def _add_generator_modifier(o, key, first=False):
-    return add_nodes_modifier(o, MOD_NAMES[key], generators.BUILDERS[key](), first)
+    m = add_nodes_modifier(o, MOD_NAMES[key], generators.BUILDERS[key](), first)
+    keep_last(o, LAST)
+    return m
 
 
 def _generator_object(name, kind, key, values, location=None):

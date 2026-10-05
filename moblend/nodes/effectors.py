@@ -25,6 +25,7 @@ PARAMS = [
     S("Visibility", "BOOL", False, desc="Hide clones where the effect is over 50%"),
     S("Deformation", "MENU", desc="Also act on plain meshes: Point (move points), Polygon (each face as a "
                                   "clone) or Object (the whole mesh as one clone)"),
+    S("Weight Transform", "FLOAT", 0.0, desc="Add to the clones' MoGraph weight (read by later effectors)"),
 ]
 
 
@@ -37,7 +38,8 @@ def _apply(b, g, geo, weight, position=None, rotation=None, scale=None, color=No
                           "Position": position or g["Position"], "Rotation": rotation or g["Rotation"],
                           "Scale": scale, "Color": color or g["Color"],
                           "Color Mix": g["Color Mix"], "Local Space": g["Local Space"],
-                          "Visibility": g["Visibility"], "Deformation": g["Deformation"]})
+                          "Visibility": g["Visibility"], "Deformation": g["Deformation"],
+                          "Weight Transform": g["Weight Transform"]})
     return n.outputs[0]
 
 

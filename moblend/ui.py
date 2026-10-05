@@ -10,7 +10,7 @@ from .catalog import (CLONER_MOD, CLONER_MODES, DEFORMER_TYPES, EFFECTOR_TYPES, 
 from .nodes import build_all
 from .nodes.core import FALLOFF_NAMES, SELECTION_NAMES
 
-CLONER_ICONS = {"linear": "IPO_LINEAR", "radial": "MESH_CIRCLE", "grid": "MESH_GRID",
+CLONER_ICONS = {"linear": "IPO_LINEAR", "radial": "MESH_CIRCLE", "grid": "MESH_GRID", "honeycomb": "LIGHTPROBE_PLANE",
                 "object": "MESH_ICOSPHERE", "spline": "CURVE_BEZCURVE"}
 EFFECTOR_ICONS = {"plain": "EMPTY_AXIS", "random": "RNDCURVE", "step": "IPO_CONSTANT", "noise": "FORCE_TURBULENCE",
                   "wave": "FORCE_HARMONIC", "time": "TIME", "target": "TRACKER", "delay": "FORCE_DRAG",
@@ -238,6 +238,43 @@ class MB_OT_link_field(_MBOperator):
         return True
 
 
+class MB_OT_clones(_MBOperator):
+    """MoGraph Selection tools for the active cloner"""
+    bl_idname = "moblend.clones"
+    bl_label = "MoGraph Selection"
+    action: EnumProperty(items=[
+        ("PICK", "Pick Clones", "One vertex per clone; select them in Edit Mode, then Store Selection"),
+        ("STORE", "Store Selection", "Selected clone vertices become the MoGraph Selection"),
+        ("HIDE", "Hide Selected", "A Plain effector that hides the selected clones"),
+        ("SWAP", "Swap Cloner/Matrix", "Toggle between rendering clones and positions only")])
+
+    def run(self, ctx):
+        c = ctx.active_object
+        if api.mb_kind(c) != Kind.CLONER:
+            return self.fail("Select a cloner")
+        if self.action == "PICK":
+            api.sync_clone_points(c)
+            return bpy.ops.object.mode_set(mode="EDIT")
+        if self.action == "STORE":
+            picked = api.selection_from_edit_mode(c)
+            bpy.ops.object.mode_set(mode="OBJECT")
+            self.report({"INFO"}, f"{len(picked)} clones selected")
+            return True
+        if self.action == "HIDE":
+            return api.hide_selected_clones(c)
+        return api.make_matrix(c, not api.is_matrix(c))
+
+
+class MB_OT_add_matrix(_MBOperator):
+    """Add a Matrix: cloner positions only (boxes in the viewport, nothing rendered)"""
+    bl_idname = "moblend.add_matrix"
+    bl_label = "Add Matrix"
+    mode: EnumProperty(items=_enum(CLONER_MODES))
+
+    def run(self, ctx):
+        return api.create_matrix(self.mode, location=ctx.scene.cursor.location.copy())
+
+
 class MB_OT_cloner_mode(_MBOperator):
     """Switch the cloner's mode"""
     bl_idname = "moblend.cloner_mode"
@@ -324,7 +361,8 @@ def _operator_menu(idname, label, operator, prop, names, icons, extra=()):
     return type(idname, (bpy.types.Menu,), {"bl_idname": idname, "bl_label": label, "draw": draw})
 
 
-MB_MT_cloners = _operator_menu("MB_MT_cloners", "Cloner", "moblend.add_cloner", "mode", CLONER_MODES, CLONER_ICONS)
+MB_MT_cloners = _operator_menu("MB_MT_cloners", "Cloner", "moblend.add_cloner", "mode", CLONER_MODES, CLONER_ICONS,
+                               [("moblend.add_matrix", "Matrix (grid)", "LIGHTPROBE_VOLUME")])
 MB_MT_effectors = _operator_menu("MB_MT_effectors", "Effectors", "moblend.add_effector", "type", EFFECTOR_TYPES,
                                  EFFECTOR_ICONS, [("moblend.group_effector", "Group (selected effectors)",
                                                    "OUTLINER_COLLECTION")])
@@ -432,6 +470,12 @@ class MB_PT_main(bpy.types.Panel):
         col.label(text="Clones")
         for s in o[KEY_CLONES].objects:
             col.label(text=s.name, icon="OBJECT_DATA")
+        box = layout.box()
+        box.label(text="MoGraph Selection" + (" · Matrix" if api.is_matrix(o) else ""), icon="RESTRICT_SELECT_OFF")
+        row = box.row(align=True)
+        for action, icon in (("PICK", "EDITMODE_HLT"), ("STORE", "CHECKMARK"), ("HIDE", "HIDE_ON"),
+                             ("SWAP", "LIGHTPROBE_VOLUME")):
+            _op(row, "moblend.clones", icon, action=action)
         self.effector_list(layout, o)
         self.extra_modifiers(layout, o, skip={CLONER_MOD})
 
@@ -569,6 +613,6 @@ CLASSES = (MB_OT_add_cloner, MB_OT_add_effector, MB_OT_add_deformer, MB_OT_add_g
            MB_OT_volume_builder, MB_OT_volume_members, MB_OT_loft,
            MB_OT_cloner_mode,
            MB_OT_link, MB_OT_move_effector, MB_OT_color_material, MB_OT_bridge, MB_OT_rebuild,
-           MB_OT_add_field, MB_OT_link_field, MB_OT_group_effector,
+           MB_OT_add_field, MB_OT_link_field, MB_OT_group_effector, MB_OT_clones, MB_OT_add_matrix,
            MB_MT_cloners, MB_MT_effectors, MB_MT_deformers, MB_MT_fields, MB_MT_generators, MB_MT_add,
            MB_PT_main, MB_PT_bridge, MB_Prefs)

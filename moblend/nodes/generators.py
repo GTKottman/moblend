@@ -204,6 +204,22 @@ def _loft(b, g):
     return b.node("GeometryNodeSetMaterial", {"Geometry": mesh, "Material": g["Material"]}).outputs[0]
 
 
+def _display(b, g):
+    """Cinema 4D Viewport Mode: in the viewport only, show clones as boxes, points or nothing. O(clones)."""
+    geo = g["Geometry"]
+    bounds = b.node("GeometryNodeInputInstanceBounds")
+    _, rot, scale = b.instance_trs()
+    box = b.vmath("MULTIPLY", b.vmath("SUBTRACT", out(bounds, "Max"), out(bounds, "Min")), scale)
+    tagged = b.store(b.store(geo, "mb_box", box, "FLOAT_VECTOR", "INSTANCE"), "mb_rot", rot, "QUATERNION", "INSTANCE")
+    pts = b.node("GeometryNodeInstancesToPoints", {"Instances": tagged}).outputs[0]
+    boxes = b.node("GeometryNodeInstanceOnPoints", {
+        "Points": pts, "Instance": b.node("GeometryNodeMeshCube", {"Size": (1, 1, 1)}).outputs[0],
+        "Rotation": b.named("mb_rot", "QUATERNION"), "Scale": b.named("mb_box", "FLOAT_VECTOR")}).outputs[0]
+    shown = b.index_switch("GEOMETRY", b.menu(["Object", "Bounding Box", "Points", "Off"], g["Viewport"]),
+                           [geo, boxes, pts, None])
+    return b.switch("GEOMETRY", b.inp("GeometryNodeIsViewport"), geo, shown)
+
+
 BUILDERS = {
     "motext": geometry_group("MB MoText", [
         S("Text", "STRING", "MOBLEND"),
@@ -252,6 +268,9 @@ BUILDERS = {
         S("Flip", "BOOL", False, desc="Flip normals"),
         S("Material", "MATERIAL"),
     ], _loft),
+    "display": geometry_group("MB Display", [
+        S("Viewport", "MENU", desc="Viewport only: Object, Bounding Box, Points or Off (renders always show clones)"),
+    ], _display, {"Viewport": "Object"}),
     "tracer": geometry_group("MB Tracer", [
         S("Mode", "MENU", desc="Connect: a tube through the clones. Trails: each clone leaves a trail over time"),
         S("Radius", "FLOAT", 0.04, 0.0, subtype="DISTANCE"),

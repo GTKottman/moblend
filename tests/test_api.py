@@ -45,6 +45,19 @@ def near(a, b, tol=1e-3):
     return (Vector(a) - Vector(b)).length < tol
 
 
+def _heights(c):
+    return [round(x.translation.z, 2) for x in sorted(instances(c), key=lambda m: m.translation.x)]
+
+
+def _line(count=5, offset=(1, 0, 0)):
+    return api.create_cloner("linear", params={"Count": count, "Offset": list(offset)}, location=(0, 0, 0))
+
+
+def _lift(cloners, **kw):
+    params = {"Position": [0, 0, 1], "Local Space": False, **kw.pop("params", {})}
+    return api.add_effector(kw.pop("type", "plain"), cloners=cloners, params=params, **kw)
+
+
 @case
 def catalog_matches_builders_and_all_groups_build():
     from moblend import catalog, nodes
@@ -69,7 +82,7 @@ def effector_reorder_stays_below_cloner():
     assert c.modifiers[0].name == "MB Cloner"
     api.add_tracer(c.name)
     api.add_effector("plain", name="C", cloners=[c.name])
-    assert c.modifiers[-1].name == "MB Tracer"  # new effectors go above the tracer
+    assert [m.name for m in c.modifiers][-2:] == ["MB Tracer", "MB Display"]  # effectors go above both
     assert {i["name"]: i.get("affects") for i in api.list_mograph() if i["kind"] == "effector"} == \
         {"A": [c.name], "B": [c.name], "C": [c.name]}
     assert a and b
@@ -105,6 +118,105 @@ def clones_keep_child_rotation_and_scale():
     m = instances(c)
     assert sorted(round(x.translation.x, 3) for x in m) == [0, 3], [x.translation for x in m]
     assert all(near(x.to_scale(), (0.5, 0.5, 2.0)) for x in m), [x.to_scale() for x in m]
+
+
+@case
+def linear_cloner_options():
+    c = api.create_cloner("linear", params={"Count": 5, "Offset": [8, 0, 0], "Mode": "End Point"}, location=(0, 0, 0))
+    assert sorted(round(x.translation.x, 3) for x in instances(c)) == [0, 2, 4, 6, 8]  # span, not step
+    api.set_params(c, {"Mode": "Per Step", "Offset": [1, 0, 0], "Start Offset": 2})
+    assert sorted(round(x.translation.x, 3) for x in instances(c)) == [2, 3, 4, 5, 6]  # first 2 skipped
+    api.set_params(c, {"Start Offset": 0, "Count": 4, "Step Curve": [0, 0, 90]})  # quarter turn per step
+    pts = sorted((tuple(round(v, 3) for v in x.translation[:2]) for x in instances(c)))
+    assert pts == sorted([(0, 0), (1, 0), (1, 1), (0, 1)]), pts  # the line curls into a square
+    api.set_params(c, {"Step Curve": [0, 0, 0], "Scale Step": [0.5, 0.5, 0.5]})
+    assert abs(instances(c)[2].to_scale().x - 2.0) < 1e-4  # 1 + 2 x 0.5
+
+
+@case
+def radial_offset_grid_options_and_honeycomb():
+    r = api.create_cloner("radial", params={"Count": 4, "Radius": 2, "Offset": 90}, location=(0, 0, 0))
+    assert near(sorted((x.translation for x in instances(r)), key=lambda v: (round(v.x), round(v.y)))[0], (-2, 0, 0))
+    g = api.create_cloner("grid", params={"Count X": 3, "Count Y": 1, "Count Z": 1, "Spacing": [4, 0, 0],
+                                          "Mode": "End Point"}, location=(0, 0, 0))
+    assert sorted(round(x.translation.x, 3) for x in instances(g)) == [-2, 0, 2]
+    api.set_params(g, {"Count X": 5, "Count Y": 5, "Count Z": 5, "Spacing": [1, 1, 1], "Mode": "Per Step",
+                       "Fill": 0.3})
+    assert len(instances(g)) == 125 - 27  # hollow: the 3x3x3 core is empty
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=1.6, location=(0, 0, 0))
+    api.set_params(g, {"Fill": 1.0, "Shape": "Object", "Object": bpy.context.object.name})
+    assert len(instances(g)) == 19  # inside r=1.6: center, 6 axis points, 12 edge points (corners are 1.73)
+    h = api.create_cloner("honeycomb", params={"Count Width": 4, "Count Height": 3}, location=(0, 0, 0))
+    m = instances(h)
+    assert len(m) == 12
+    rows = {}
+    for x in m:
+        rows.setdefault(round(x.translation.y, 3), []).append(round(x.translation.x, 3))
+    starts = sorted(min(v) for v in rows.values())
+    assert len(set(starts)) == 2  # alternate rows are shifted
+
+
+@case
+def object_mode_distributions():
+    bpy.ops.mesh.primitive_cube_add(size=2)
+    cube = bpy.context.object
+    c = api.create_cloner("object", params={"Object": cube.name, "Distribution": "Edges"}, location=(0, 0, 0))
+    assert len(instances(c)) == 12  # edge midpoints
+    api.set_params(c, {"Distribution": "Axis"})
+    assert len(instances(c)) == 1
+    api.set_params(c, {"Distribution": "Volume", "Count": 60})
+    n = len(instances(c))
+    assert 20 < n < 150, n
+    vg = cube.vertex_groups.new(name="Top")
+    vg.add([v.index for v in cube.data.vertices if v.co.z > 0], 1.0, "REPLACE")
+    api.set_params(c, {"Distribution": "Vertices", "Selection": "Top"})
+    assert len(instances(c)) == 4
+    matrix = api.create_matrix("linear", params={"Count": 3, "Step Rotation": [0, 0, 30]})
+    assert matrix.hide_render
+    api.set_params(c, {"Distribution": "Instances", "Object": matrix.name, "Selection": ""})
+    m = instances(c)
+    assert len(m) == 3 and abs(m[1].to_euler().z - math.radians(30)) < 1e-3  # takes the matrix's rotations
+
+
+@case
+def blend_mode_morphs_between_children():
+    bpy.ops.mesh.primitive_cube_add(size=1)
+    small = bpy.context.object
+    small.name = "A Small"
+    bpy.ops.mesh.primitive_cube_add(size=3)
+    big = bpy.context.object
+    big.name = "B Big"
+    c = api.create_cloner("linear", objects=[small, big], params={"Count": 3, "Order": "Blend"},
+                          location=(0, 0, 0))
+    ev = c.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    geo = ev.evaluated_geometry()
+    sizes = []
+    for inst in bpy.context.evaluated_depsgraph_get().object_instances:
+        if inst.is_instance and inst.parent and inst.parent.original == c:
+            sizes.append(max(v[0] for v in inst.object.bound_box) * 2)
+    assert sorted(round(s, 2) for s in sizes) == [1.0, 2.0, 3.0], sizes  # the middle clone is halfway
+    assert geo
+
+
+@case
+def selection_and_weight_tags():
+    c = _line(6)
+    api.set_clone_selection(c, "1-2, 4")
+    e = _lift([c], falloff="Infinite", params={"Use MoGraph Selection": True})
+    assert _heights(c) == [0, 1, 1, 0, 1, 0], _heights(c)
+    api.set_params(e, {"Use MoGraph Selection": False, "Use Weight": True})
+    api.set_clone_weights(c, [0, 0.5, 1, 0, 0, 0.25])
+    assert _heights(c) == [0, 0.5, 1, 0, 0, 0.25], _heights(c)
+    assert api.sync_clone_points(c) == 6
+    assert len(c.data.vertices) == 6 and abs(c.data.vertices[3].co.x - 3) < 1e-4
+    api.delete(e)
+    api.set_clone_selection(c, [0, 5])
+    api.hide_selected_clones(c)
+    scales = [round(x.to_scale().x, 3) for x in sorted(instances(c), key=lambda m: m.translation.x)]
+    assert scales == [0, 1, 1, 1, 1, 0], scales
+    api.set_params(c, {"Viewport": "Points"}, modifier="MB Display")
+    geo = c.evaluated_get(bpy.context.evaluated_depsgraph_get()).evaluated_geometry()
+    assert geo.pointcloud is not None and len(geo.pointcloud.points) == 6 and geo.instances_pointcloud() is None
 
 
 @case
@@ -268,10 +380,6 @@ def sound_effector_lifts_the_clone_hearing_the_tone():
     assert all(x.translation.z > 1.9 for x in instances(c))
 
 
-def _heights(c):
-    return [round(x.translation.z, 2) for x in sorted(instances(c), key=lambda m: m.translation.x)]
-
-
 @case
 def fields_layer_by_blend_mode():
     c = api.create_cloner("linear", params={"Count": 9, "Offset": [1, 0, 0]}, location=(0, 0, 0))
@@ -297,15 +405,6 @@ def selection_pattern_limits_effect():
     assert _heights(c) == [0, 0, 1, 1, 1, 0, 0, 0]
     api.set_params(e, {"Invert Selection": True})
     assert _heights(c) == [1, 1, 0, 0, 0, 1, 1, 1]
-
-
-def _line(count=5, offset=(1, 0, 0)):
-    return api.create_cloner("linear", params={"Count": count, "Offset": list(offset)}, location=(0, 0, 0))
-
-
-def _lift(cloners, **kw):
-    params = {"Position": [0, 0, 1], "Local Space": False, **kw.pop("params", {})}
-    return api.add_effector(kw.pop("type", "plain"), cloners=cloners, params=params, **kw)
 
 
 @case
