@@ -44,7 +44,8 @@ FIELD_ICONS = {"Infinite": "WORLD", "Solid": "WORLD", "Group": "OUTLINER_COLLECT
                "Box": "CUBE", "Cylinder": "MESH_CYLINDER", "Cone": "MESH_CONE", "Capsule": "MESH_CAPSULE",
                "Torus": "MESH_TORUS", "Linear": "IPO_LINEAR", "Radial": "DRIVER_ROTATIONAL_DIFFERENCE",
                "Noise": "FORCE_TURBULENCE", "Random": "RNDCURVE", "Time": "TIME", "Step": "IPO_CONSTANT",
-               "Object": "OBJECT_DATA", "Shader": "TEXTURE", "Sound": "SPEAKER", "Formula": "DRIVER_TRANSFORM"}
+               "Object": "OBJECT_DATA", "Shader": "TEXTURE", "Sound": "SPEAKER", "Formula": "DRIVER_TRANSFORM",
+               "Attribute": "GROUP_VERTEX"}
 LAYERED = (Kind.EFFECTOR, Kind.DEFORMER)
 EFFECTABLE = (Kind.CLONER, Kind.MOTEXT, Kind.FRACTURE)
 OWNERS = (Kind.EFFECTOR, Kind.DEFORMER, Kind.SIMPLE_DEFORMER)
@@ -355,6 +356,30 @@ class MB_OT_color_material(_MBOperator):
         return api.set_color_material(ctx.selected_objects)
 
 
+class MB_OT_materials(_MBOperator):
+    """MoGraph shaders for the selection: MoGraph Color, Multi (a color per clone), Beat (pulse on the beat),
+    and MoGraph Cache (bake simulations)"""
+    bl_idname = "moblend.materials"
+    bl_label = "MoGraph Shaders"
+    action: EnumProperty(items=[("COLOR", "MoGraph Color", ""), ("MULTI", "Multi Shader", ""),
+                                ("BEAT", "Beat Shader", ""), ("BAKE", "Bake Cache", "")])
+    bpm: bpy.props.FloatProperty(name="BPM", default=120.0, min=1.0)
+
+    def run(self, ctx):
+        sel = list(ctx.selected_objects)
+        if not sel:
+            return self.fail("Select objects")
+        if self.action == "COLOR":
+            return api.set_color_material(sel)
+        if self.action == "MULTI":
+            return api.multi_material(sel, ["#ff5a1f", "#3fa9f5", "#f5d63f", "#7ad151"])
+        if self.action == "BEAT":
+            return api.beat_material(sel, bpm=self.bpm)
+        for o in sel:
+            api.bake_cache(o)
+        return True
+
+
 class MB_OT_bridge(_MBOperator):
     """Start or stop the MCP bridge"""
     bl_idname = "moblend.bridge"
@@ -633,6 +658,9 @@ class MB_PT_bridge(bpy.types.Panel):
             layout.label(text=bridge.socket_path())
         layout.operator("moblend.bridge", text="Stop" if running else "Start").action = "STOP" if running else "START"
         layout.operator("moblend.color_material", icon="MATERIAL")
+        row = layout.row(align=True)
+        for action, icon in (("MULTI", "NODE_MATERIAL"), ("BEAT", "SOUND"), ("BAKE", "PHYSICS")):
+            _op(row, "moblend.materials", icon, action=action)
         layout.operator("moblend.rebuild", icon="FILE_REFRESH")
 
 
@@ -650,5 +678,6 @@ CLASSES = (MB_OT_add_cloner, MB_OT_add_effector, MB_OT_add_deformer, MB_OT_add_g
            MB_OT_cloner_mode,
            MB_OT_link, MB_OT_move_effector, MB_OT_color_material, MB_OT_bridge, MB_OT_rebuild,
            MB_OT_add_field, MB_OT_link_field, MB_OT_group_effector, MB_OT_clones, MB_OT_add_matrix,
+           MB_OT_materials,
            MB_MT_cloners, MB_MT_effectors, MB_MT_deformers, MB_MT_fields, MB_MT_generators, MB_MT_add,
            MB_PT_main, MB_PT_bridge, MB_Prefs)

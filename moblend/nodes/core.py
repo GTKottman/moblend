@@ -82,7 +82,31 @@ SELECTION_INPUTS += [
 ]
 SELECTION_NAMES = frozenset(s["name"] for s in SELECTION_INPUTS)
 RANGE_INPUTS = [S("Minimum", "FLOAT", 0.0, desc="Effect where the falloff is 0"),
-                S("Maximum", "FLOAT", 1.0, desc="Effect where the falloff is 1")]
+                S("Maximum", "FLOAT", 1.0, desc="Effect where the falloff is 1"),
+                S("Memory", "MENU", desc="C4D Decay / Freeze / Delay layers: Decay fades the effect out after the "
+                                         "field passes, Freeze keeps it, Ease smooths it over time"),
+                S("Memory Rate", "FLOAT", 0.9, 0.0, 1.0, "FACTOR", "Decay: fraction kept per frame. Ease: lag")]
+MEMORY = ("Off", "Decay", "Freeze", "Ease")
+
+
+def _memory(b, g, geo, weight):
+    """Per-clone weight remembered across frames (simulation zone): O(clones) per frame."""
+    now = b.store(geo, "mb_now", weight, "FLOAT", "INSTANCE")
+    pts = b.node("GeometryNodeInstancesToPoints", {"Instances": now}).outputs[0]
+    sim_in, sim_out = b.node("GeometryNodeSimulationInput"), b.node("GeometryNodeSimulationOutput")
+    sim_in.pair_with_output(sim_out)
+    b.link(b.store(pts, "mb_mem", b.named("mb_now", "FLOAT"), "FLOAT", "POINT"), sim_in.inputs[0])
+    state = sim_in.outputs[1]
+    current = b.node("GeometryNodeSampleIndex", {"Geometry": pts, "Value": b.named("mb_now", "FLOAT"),
+                                                 "Index": b.index()}, data_type="FLOAT", domain="POINT").outputs[0]
+    mem, rate = b.named("mb_mem", "FLOAT"), g["Memory Rate"]
+    mode = b.menu(MEMORY, g["Memory"])
+    nxt = b.index_switch("FLOAT", mode, [current, b.math("MAXIMUM", b.math("MULTIPLY", mem, rate), current),
+                                         b.math("MAXIMUM", mem, current), b.mix("FLOAT", rate, current, mem)])
+    b.link(b.store(state, "mb_mem", nxt, "FLOAT", "POINT"), sim_out.inputs["Geometry"])
+    remembered = b.node("GeometryNodeSampleIndex", {"Geometry": sim_out.outputs[0], "Value": mem, "Index": b.index()},
+                        data_type="FLOAT", domain="POINT").outputs[0]
+    return b.switch("FLOAT", b.compare(mode, 0), remembered, weight)
 LAYERS_INPUT = "Layers"  # combined weight of linked Field objects, wired by api/field.py (1 = no fields)
 
 
@@ -122,9 +146,11 @@ def falloff_group(name, geo_name, extra, body, falloff_default="Sphere", menus=N
         if selection:  # C4D Minimum/Maximum: where the falloff is 0 / 1 (e.g. -1..1 for a two-way effect)
             weight = b.math("MULTIPLY_ADD", weight, b.math("SUBTRACT", g["Maximum"], g["Minimum"]), g["Minimum"])
             weight = b.math("MULTIPLY", weight, _selection(b, g))
+            weight = _memory(b, g, g[geo_name], weight)
         weight = b.math("MULTIPLY", weight, g["Strength"])
         b.link(body(b, g, weight), gout.inputs[0])
-        set_menu_defaults(ng, {"Falloff": falloff_default, **(menus or {})})
+        set_menu_defaults(ng, {"Falloff": falloff_default, **({"Memory": "Off"} if selection else {}),
+                               **(menus or {})})
         return ng
     return lambda: ensure(name, build)
 
@@ -183,6 +209,28 @@ def sound_level(b, g, count):
 DEFORMATION = ("Off", "Point", "Polygon", "Object")
 
 
+def _modify_clone(b, g, geo, w):
+    """C4D Modify Clone: shift each clone to a later child of its cloner by Modify Clone x weight x (children - 1),
+    re-instancing from the children the instancer bundled onto the geometry. O(clones)."""
+    got = b.node("GeometryNodeGetGeometryBundle", {"Geometry": geo})
+    split = b.node("NodeSeparateBundle", {"Bundle": out(got, "Bundle")})
+    split.bundle_items.new("GEOMETRY", CHILDREN_ITEM)
+    children = split.outputs[0]
+    n = b.at_least(b.instance_count(children))
+    shift = b.math("ROUND", b.math("MULTIPLY", b.math("MULTIPLY", g["Modify Clone"], w), b.math("SUBTRACT", n, 1.0)))
+    child = b.math("FLOORED_MODULO", b.math("ADD", b.named("mb_child", "INT"), shift), n)
+    keep = b.store(geo, "mb_xf", b.inp("GeometryNodeInstanceTransform"), "FLOAT4X4", "INSTANCE")
+    keep = b.store(keep, "mb_child", child, "INT", "INSTANCE")
+    pts = b.node("GeometryNodeInstancesToPoints", {"Instances": keep}).outputs[0]
+    re = b.node("GeometryNodeInstanceOnPoints", {"Points": pts, "Instance": children, "Pick Instance": True,
+                                                 "Instance Index": b.named("mb_child", "INT")}).outputs[0]
+    re = b.node("GeometryNodeSetInstanceTransform", {"Instances": re, "Transform": b.named("mb_xf", "FLOAT4X4")}
+                ).outputs[0]
+    re = b.node("GeometryNodeSetGeometryBundle", {"Geometry": re, "Bundle": out(got, "Bundle")}).outputs[0]
+    active = b.math("GREATER_THAN", b.math("ABSOLUTE", g["Modify Clone"]), 1e-6)
+    return b.switch("GEOMETRY", active, geo, re)
+
+
 def apply():
     """Weighted position/rotation/scale/color/visibility on instances. With Deformation, also on plain
     geometry: Point moves points, Polygon treats every face as a clone, Object the whole mesh. O(elements)."""
@@ -193,7 +241,7 @@ def apply():
              S("Position", "VECTOR", (0, 0, 0)), S("Rotation", "VECTOR", (0, 0, 0)),
              S("Scale", "VECTOR", (0, 0, 0)), S("Color", "COLOR", WHITE),
              S("Color Mix", "FLOAT", 0.0), S("Local Space", "BOOL", True), S("Visibility", "BOOL", False),
-             S("Deformation", "MENU"), S("Weight Transform", "FLOAT", 0.0)],
+             S("Deformation", "MENU"), S("Weight Transform", "FLOAT", 0.0), S("Modify Clone", "FLOAT", 0.0)],
             [S("Instances", "GEOMETRY")],
             "Weighted position/rotation/scale/color change on instances (and meshes via Deformation)",
         )
@@ -234,13 +282,15 @@ def apply():
                                   [mesh, moved, realized(polys.outputs[0]), realized(whole)])
         rest = b.join(out(parts, "Curve"), out(parts, "Point Cloud"), out(parts, "Volume"),
                       out(parts, "Grease Pencil"))
-        b.link(b.join(effect(out(parts, "Instances")), deformed, rest), gout.inputs[0])
+        clones = _modify_clone(b, g, effect(out(parts, "Instances")), w)
+        b.link(b.join(clones, deformed, rest), gout.inputs[0])
         set_menu_defaults(ng, {"Deformation": "Off"})
         return ng
     return ensure("MB Apply", build)
 
 
-CLONE_ORDERS = ("Iterate", "Random", "Blend")
+CLONE_ORDERS = ("Iterate", "Random", "Blend", "Sort")  # Sort: every clone starts as child 0; effectors pick
+CHILDREN_ITEM = "children"  # bundle item carrying the clone collection's children down the modifier stack
 SELECTION_TAG, WEIGHT_TAG = "MoGraph Selection", "MoGraph Weight"  # vertex groups on the cloner's own mesh
 
 
@@ -313,13 +363,15 @@ def instancer():
                       {"Instances": coll, "Transform": b.combine_transform(r=rot, s=scale)}).outputs[0]
         rnd = b.rand("INT", 0, 100000, seed=g["Seed"])
         order = b.menu(CLONE_ORDERS, g["Order"])
-        pick = b.index_switch("INT", order, [b.index(), rnd, b.index()])
+        pick = b.index_switch("INT", order, [b.index(), rnd, b.index(), 0])
         picked = b.node("GeometryNodeInstanceOnPoints", {
             "Points": g["Points"], "Instance": coll, "Pick Instance": True, "Instance Index": pick,
             "Rotation": g["Rotation"], "Scale": g["Scale"]}).outputs[0]
         transform = b.combine_transform(b.position(), g["Rotation"], g["Scale"])
-        geo = b.index_switch("GEOMETRY", order, [picked, picked, _blend(b, g["Points"], coll, transform)])
+        geo = b.index_switch("GEOMETRY", order, [picked, picked, _blend(b, g["Points"], coll, transform), picked])
         geo = init_color(b, geo)
+        child = b.math("FLOORED_MODULO", pick, b.at_least(b.instance_count(coll)))
+        geo = b.store(geo, "mb_child", child, "INT", "INSTANCE")
         # Per-clone data from the cloner's own mesh: vertex i holds clone i's selection / weight tags.
         # A missing tag (or a clone index beyond the data points) reads as 0.
         for tag, attr in ((SELECTION_TAG, "mb_selection"), (WEIGHT_TAG, "mb_weight")):
@@ -327,6 +379,10 @@ def instancer():
                                                        "Index": b.index()}, data_type="FLOAT", domain="POINT")
             geo = b.store(geo, attr, value.outputs[0], "FLOAT", "INSTANCE")
         geo = b.store(geo, "mb_index", b.index(), "FLOAT", "INSTANCE")
+        bundle = b.node("NodeCombineBundle")
+        bundle.bundle_items.new("GEOMETRY", CHILDREN_ITEM)
+        b.link(coll, bundle.inputs[0])
+        geo = b.node("GeometryNodeSetGeometryBundle", {"Geometry": geo, "Bundle": bundle.outputs[0]}).outputs[0]
         b.link(geo, gout.inputs[0])
         set_menu_defaults(ng, {"Order": "Iterate"})
         return ng

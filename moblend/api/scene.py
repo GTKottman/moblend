@@ -69,3 +69,15 @@ def evaluated_stats(ref):
         stats.update(vertices=len(me.vertices), faces=len(me.polygons))
         ev.to_mesh_clear()
     return stats
+
+
+def bake_cache(ref, free=False):
+    """MoGraph Cache: bake (or free) the object's simulations (Delay, Memory, Trails, MoInstance) over the scene's
+    frame range, so playback and renders no longer need to run from the start."""
+    o = get_object(ref)
+    with bpy.context.temp_override(object=o, active_object=o, selected_objects=[o]):
+        if free:
+            bpy.ops.object.simulation_nodes_cache_delete(selected=True)
+        else:
+            bpy.ops.object.simulation_nodes_cache_bake(selected=True)
+    return {"object": o.name, "baked": not free}

@@ -74,6 +74,8 @@ class MB_VoronoiSettings(bpy.types.PropertyGroup):
     texture_points: IntProperty(name="Shader Points", default=0, min=0, update=_changed)
     density_group: StringProperty(name="Weightmap", default="", update=_changed,
                                   description="Vertex group: more pieces where its weight is high")
+    selection_group: StringProperty(name="MoGraph Selection", default="", update=_changed,
+                                    description="Vertex group: only this part breaks; the rest stays one piece")
     # -- Object
     colorize: BoolProperty(name="Colorize Fragments", default=True, update=_changed)
     ngons: BoolProperty(name="Create N-Gon Surfaces", default=False, update=_changed)
@@ -106,6 +108,13 @@ class MB_VoronoiSettings(bpy.types.PropertyGroup):
                                 description="Also distort the original outer surface")
     keep_surface: BoolProperty(name="Keep Original Surface", default=True, update=_changed,
                                description="Points on the outer surface never move")
+    low_clip: FloatProperty(name="Low Clip", default=0.0, min=0.0, max=1.0, subtype="FACTOR", update=_changed)
+    high_clip: FloatProperty(name="High Clip", default=1.0, min=0.0, max=1.0, subtype="FACTOR", update=_changed)
+    depth: FloatProperty(name="Strength at Depth", default=0.0, min=0.0, subtype="DISTANCE", update=_changed,
+                         description="Noise grows from 0 at the surface to full strength at this depth (0 = off)")
+    relax: IntProperty(name="Relax Inside Edges", default=0, min=0, max=50, update=_changed)
+    smooth_inside: BoolProperty(name="Smooth Normals", default=False, update=_changed,
+                                description="Smooth-shade the cut faces")
     # -- Geometry Glue
     glue: EnumProperty(name="Glue", update=_changed, items=[
         ("NONE", "Off", ""), ("CLUSTER", "Cluster", "Random groups of fragments"),
@@ -123,12 +132,13 @@ class MB_VoronoiSettings(bpy.types.PropertyGroup):
 
 SECTIONS = {  # panel layout and MCP grouping, in C4D tab order
     "Sources": ("use_generator", "distribution", "pieces", "seed", "std_dev", "exp_axes", "inside", "high_quality",
-                "bounds_offset", "bounds_scale", "sources", "texture", "texture_points", "density_group"),
+                "bounds_offset", "bounds_scale", "sources", "texture", "texture_points", "density_group",
+                "selection_group"),
     "Object": ("colorize", "ngons", "offset", "invert", "hull_only", "thickness", "close_holes", "scale_cells",
                "auto_update"),
     "Sorting": ("sort", "sort_axis", "sort_object", "along_spline", "invert_sort"),
     "Detailing": ("detail", "max_edge", "noise_strength", "noise_scale", "noise_seed", "octaves", "noise_surface",
-                  "keep_surface"),
+                  "keep_surface", "low_clip", "high_clip", "depth", "relax", "smooth_inside"),
     "Geometry Glue": ("glue", "cluster_amount", "cluster_seed", "glue_distance", "bigger", "glue_object",
                       "glue_rest"),
 }
@@ -402,10 +412,18 @@ def _cell(source, seeds, kd, i, offset, inside_index):
     return bm
 
 
-def _detail(bm, s, inside_index):
-    """Subdivide the cut faces to Maximum Edge Length, then displace them with fractal noise.
+def _clipped(n, s):
+    """Noise component -1..1 with C4D Low/High Clip: values outside the window become plateaus."""
+    t = (n + 1) / 2
+    span = max(s.high_clip - s.low_clip, 1e-6)
+    return (min(max((t - s.low_clip) / span, 0.0), 1.0)) * 2 - 1
 
-    Displacement depends only on position, so the two sides of a cut move identically. O(new faces).
+
+def _detail(bm, s, inside_index, surface):
+    """Subdivide the cut faces to Maximum Edge Length, then displace them with fractal noise (clipped, and
+    ramped in from the original surface by Strength at Depth), then relax and smooth.
+
+    Displacement depends only on position, so the two sides of a cut move identically. O(new faces log F).
     """
     inside_faces = [f for f in bm.faces if f.material_index == inside_index]
     bmesh.ops.triangulate(bm, faces=inside_faces)
@@ -421,7 +439,19 @@ def _detail(bm, s, inside_index):
         on_surface = any(f.material_index != inside_index for f in v.link_faces)
         if not (on_cut or s.noise_surface) or (on_surface and s.keep_surface and not s.noise_surface):
             continue
-        v.co += noise.turbulence_vector(v.co * s.noise_scale + offset, max(s.octaves, 1), False) * s.noise_strength
+        n = noise.turbulence_vector(v.co * s.noise_scale + offset, max(s.octaves, 1), False)
+        depth = 1.0
+        if s.depth > 0:
+            hit = surface.find_nearest(v.co)
+            depth = min((hit[3] or 0.0) / s.depth, 1.0)
+        v.co += Vector([_clipped(c, s) for c in n]) * (s.noise_strength * depth)
+    inside_only = [v for v in bm.verts if v.link_faces and all(f.material_index == inside_index for f in v.link_faces)]
+    for _ in range(s.relax):
+        bmesh.ops.smooth_vert(bm, verts=inside_only, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+    if s.smooth_inside:
+        for f in bm.faces:
+            if f.material_index == inside_index:
+                f.smooth = True
 
 
 # ---------------------------------------------------------------- sorting & glue
@@ -472,7 +502,7 @@ class _Union:
         self.parent[self.find(a)] = self.find(b)
 
 
-def _inside_object(obj, p):
+def inside_object(obj, p):
     """Is world point p inside `obj`'s shape (sphere/box empties, otherwise its bounding box)?"""
     local = obj.matrix_world.inverted_safe() @ p
     if obj.type == "EMPTY" and obj.empty_display_type == "SPHERE":
@@ -492,11 +522,16 @@ def _kdtree(points):
     return kd
 
 
-def _glue(o, s, seeds):
-    """Group label per seed (real, unstretched positions): same label = one piece."""
+def _glue(o, s, seeds, selected=None):
+    """Group label per seed (real, unstretched positions): same label = one piece. Seeds outside the
+    MoGraph Selection (selected(p) false) all join one unbroken piece."""
     n = len(seeds)
     uf = _Union(n)
     kd = _kdtree(seeds)
+    if selected is not None:
+        rest = [i for i in range(n) if not selected(seeds[i])]
+        for i in rest[1:]:
+            uf.join(i, rest[0])
     if s.glue == "CLUSTER":
         rng = random.Random(s.cluster_seed)
         centers = rng.sample(range(n), min(s.cluster_amount, n))
@@ -513,7 +548,7 @@ def _glue(o, s, seeds):
                 for _, j, _ in kd.find_range(seeds[i], s.glue_distance):
                     uf.join(i, j)
     elif s.glue == "OBJECT" and s.glue_object is not None:
-        inside = [i for i in range(n) if _inside_object(s.glue_object, o.matrix_world @ seeds[i])]
+        inside = [i for i in range(n) if inside_object(s.glue_object, o.matrix_world @ seeds[i])]
         outside = [i for i in range(n) if i not in set(inside)]
         for group in (inside, outside if s.glue_rest else []):
             for i in group[1:]:
@@ -576,7 +611,7 @@ def _append(joined, cell, scratch, piece, piece_layer_name="mb_piece"):
     joined.from_mesh(scratch)  # appends: each cell stays its own island
 
 
-def _finish_cell(cell, s, scale, labels, i, inside_index):
+def _finish_cell(cell, s, scale, labels, i, inside_index, surface):
     """Stretch back, drop faces inside a glued piece, detail, n-gons. Returns raw neighbour labels."""
     cell.transform(scale)
     cap = cell.faces.layers.int["mb_cap_of"]
@@ -585,7 +620,7 @@ def _finish_cell(cell, s, scale, labels, i, inside_index):
         bmesh.ops.delete(cell, geom=glued, context="FACES")
     touching = {labels[f[cap]] for f in cell.faces if f[cap] >= 0 and labels[f[cap]] != labels[i]}
     if s.detail:
-        _detail(cell, s, inside_index)
+        _detail(cell, s, inside_index, surface)
     if s.ngons:
         caps = [f for f in cell.faces if f.material_index == inside_index]
         bmesh.ops.dissolve_limit(cell, angle_limit=1e-4, verts=[], edges=list(
@@ -609,10 +644,12 @@ def refresh(ref):
     scale = Matrix.Diagonal(Vector(s.scale_cells).to_4d())
     unscale = scale.inverted_safe()
     seeds = _seeds(o, source, s)
+    surface = BVHTree.FromBMesh(source)  # original space: Strength at Depth, MoGraph Selection
+    weight = _weight_lookup(o, source, surface, s.selection_group)
+    labels = _glue(o, s, seeds, None if weight is None else (lambda p: weight(p) >= 0.5))
     source.transform(unscale)  # Scale Cells: Voronoi in a stretched space, then stretched back
     space = [unscale @ p for p in seeds]
     kd = _kdtree(space)
-    labels = _glue(o, s, seeds)
 
     out = src.copy()
     out.name = f"{src.name.removesuffix(' (unfractured)')} (fractured)"
@@ -629,7 +666,8 @@ def refresh(ref):
             bmesh.ops.reverse_faces(cells[0], faces=cells[0].faces[:])
             cells.append(_cell(source, space, kd, i, 0.0, inside_index))
         for cell in cells:
-            touching.setdefault(labels[i], set()).update(_finish_cell(cell, s, scale, labels, i, inside_index))
+            touching.setdefault(labels[i], set()).update(_finish_cell(cell, s, scale, labels, i, inside_index,
+                                                                      surface))
         pieces.setdefault(labels[i], []).extend(cells)
     source.free()
     groups = list(pieces)

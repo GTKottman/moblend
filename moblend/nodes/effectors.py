@@ -26,6 +26,7 @@ PARAMS = [
     S("Deformation", "MENU", desc="Also act on plain meshes: Point (move points), Polygon (each face as a "
                                   "clone) or Object (the whole mesh as one clone)"),
     S("Weight Transform", "FLOAT", 0.0, desc="Add to the clones' MoGraph weight (read by later effectors)"),
+    S("Modify Clone", "FLOAT", 0.0, -1.0, 1.0, desc="Switch clones to other children of their cloner (1 = last)"),
 ]
 
 
@@ -39,7 +40,7 @@ def _apply(b, g, geo, weight, position=None, rotation=None, scale=None, color=No
                           "Scale": scale, "Color": color or g["Color"],
                           "Color Mix": g["Color Mix"], "Local Space": g["Local Space"],
                           "Visibility": g["Visibility"], "Deformation": g["Deformation"],
-                          "Weight Transform": g["Weight Transform"]})
+                          "Weight Transform": g["Weight Transform"], "Modify Clone": g["Modify Clone"]})
     return n.outputs[0]
 
 

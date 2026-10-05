@@ -72,8 +72,10 @@ EFFECTOR_DOC = (
     "arrangement; animate Strength), sound (params Sound = sound name or audio file path, Mode Spread (each "
     "clone its own log-spaced band between Low and High Hz) or All, Gain, Time Offset). The effector "
     "object's scale is the falloff size. Common params: Strength, Position, Rotation, Scale (added, "
-    "-1 = vanish), Uniform Scale, Color, Color Mix, Local Space, Falloff, Inner, Invert. MoGraph Selection: "
-    "Select From, Select To (-1 = last), Select Every, Select Offset, Invert Selection.")
+    "-1 = vanish), Uniform Scale, Color, Color Mix, Local Space, Visibility, Deformation (Off/Point/Polygon/"
+    "Object), Weight Transform, Modify Clone, Falloff, Inner, Invert, Minimum, Maximum, Memory (Off/Decay/"
+    "Freeze/Ease) + Memory Rate. Selection: Select From, Select To (-1 = last), Select Every, Select Offset, "
+    "Invert Selection, Use MoGraph Selection, Use Weight.")
 
 TOOLS = [
     tool("status", "Check that Blender with MoBlend is reachable; returns Blender version and file.", cmd="ping"),
@@ -233,6 +235,15 @@ TOOLS = [
          ["object", "frames"]),
     tool("set_color_material", "Give objects (or a cloner's clones / MoText) a material showing effector "
          "colors (Color + Color Mix).", {"objects": names()}, ["objects"]),
+    tool("multi_material", "MoGraph Multi Shader: a color per clone by Index (cycling), Random, or Weight "
+         "(blended along the MoGraph weight).",
+         {"objects": names(), "colors": names("'#rrggbb' colors"), "mode": enum(("Index", "Random", "Weight")),
+          "name": STR}, ["objects", "colors"]),
+    tool("beat_material", "MoGraph Beat Shader: color and glow pulsing on the beat (bpm, sharpness, emission).",
+         {"objects": names(), "bpm": NUM, "color": STR, "base": STR, "sharpness": NUM, "emission": NUM,
+          "name": STR}, ["objects"]),
+    tool("bake_cache", "MoGraph Cache: bake (or free) an object's simulations (Delay, Memory, Trails, MoInstance) "
+         "over the frame range.", {"object": OBJ, "free": {"type": "boolean"}}, ["object"]),
     tool("set_material", "Create a simple material and assign it to objects (a cloner means its clones).",
          {"objects": names(), "color": STR, "metallic": NUM, "roughness": NUM,
           "emission": {"type": "number", "description": "Emission strength (glow) in the same color"},

@@ -10,7 +10,7 @@ import bpy
 from mathutils import Matrix, Vector
 
 from .objects import get_object
-from .voronoi import KEY_PAIRS, is_voronoi
+from .voronoi import KEY_PAIRS, inside_object, is_voronoi
 
 
 def _split_pieces(o):
@@ -61,13 +61,15 @@ def _with_selection(objs, active, fn):
         fn()
 
 
-def make_dynamic(ref, breaking_threshold=10.0, mass=1.0, connect=True):
+def make_dynamic(ref, breaking_threshold=10.0, mass=1.0, connect=True, break_object=None):
     """Replace a Voronoi-fractured object by rigid-body pieces, connected where they touch.
 
-    The fractured object is hidden (not deleted), so you can go back by deleting the pieces' collection.
-    Returns the new collection's name.
+    `break_object` (C4D connector Falloff): no connectors inside that object's shape, so pieces there are
+    loose from the start. The fractured object is hidden (not deleted); delete the pieces' collection to
+    go back. Returns the new collection's name and counts.
     """
     o = get_object(ref)
+    breaker = get_object(break_object) if break_object else None
     if not is_voronoi(o):
         raise ValueError(f"{o.name} is not a Voronoi-fractured object")
     scene = bpy.context.scene
@@ -89,16 +91,21 @@ def make_dynamic(ref, breaking_threshold=10.0, mass=1.0, connect=True):
         p.rigid_body.collision_shape = "CONVEX_HULL"
     flat = list(o.get(KEY_PAIRS, []))
     pairs = [(flat[k], flat[k + 1]) for k in range(0, len(flat), 2)] if connect else []
+    made = 0
     for a, b in pairs:
         if a not in pieces or b not in pieces:
             continue
+        middle = (pieces[a].matrix_world.translation + pieces[b].matrix_world.translation) / 2
+        if breaker is not None and inside_object(breaker, middle):
+            continue
         empty = bpy.data.objects.new(f"Connector {a}-{b}", None)
         empty.empty_display_size = 0.05
-        empty.location = (pieces[a].matrix_world.translation + pieces[b].matrix_world.translation) / 2
+        empty.location = middle
         coll.objects.link(empty)
         _with_selection([empty], empty, lambda: bpy.ops.rigidbody.constraint_add(type="FIXED"))
         c = empty.rigid_body_constraint
         c.object1, c.object2 = pieces[a], pieces[b]
         c.use_breaking, c.breaking_threshold = True, breaking_threshold
+        made += 1
     o.hide_viewport = o.hide_render = True
-    return {"collection": coll.name, "pieces": len(objs), "connectors": len(pairs)}
+    return {"collection": coll.name, "pieces": len(objs), "connectors": made}

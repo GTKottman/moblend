@@ -106,6 +106,11 @@ def _shader(b, g):
     return value
 
 
+def _attribute(b, g):
+    """C4D Variable / vertex-map layer: any per-element value, e.g. a vertex group or the clones' mb_weight."""
+    return b.math("MULTIPLY", b.named(g["Attribute"], "FLOAT"), g["Multiplier"])
+
+
 def _sound(b, g):
     return sound_level(b, g, g["Element Count"])
 
@@ -131,6 +136,8 @@ TYPES = {
                _object, {"Mode": "Surface"}),
     "shader": ("MB Field Shader", TEXTURE_INPUTS, _shader, {"Texture": "Noise"}),
     "sound": ("MB Field Sound", SOUND_INPUTS, _sound, {"Mode": "All"}),
+    "attribute": ("MB Field Attribute", [S("Attribute", "STRING", "mb_weight", desc="Vertex group or attribute name"),
+                                         S("Multiplier", "FLOAT", 1.0)], _attribute, None),
 }
 
 BUILDERS = {kind: (lambda spec=spec: ensure(spec[0], _field_type(*spec))) for kind, spec in TYPES.items()}

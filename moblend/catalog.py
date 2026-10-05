@@ -18,7 +18,7 @@ FIELD_BLENDS = ("Normal", "Multiply", "Max", "Min", "Add", "Subtract", "Screen",
 # Field object kinds: falloff shapes ("Solid" = Infinite, "Group" = Infinite holding its own field list)
 # plus layer types.
 FIELD_KINDS = ("Solid", "Group") + tuple(s for s in FALLOFF_SHAPES if s != "Infinite") + (
-    "Time", "Step", "Object", "Shader", "Sound", "Formula")
+    "Time", "Step", "Object", "Shader", "Sound", "Formula", "Attribute")
 SIMPLE_DEFORMERS = {"bend": "BEND", "twist": "TWIST", "taper": "TAPER", "stretch": "STRETCH"}
 GN_DEFORMERS = ("wave", "spherify", "shear", "bulge", "displace", "moextrude")
 DEFORMER_TYPES = tuple(SIMPLE_DEFORMERS) + GN_DEFORMERS

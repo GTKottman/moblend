@@ -949,6 +949,87 @@ def moextrude_bevel_displace_and_tracer_object():
     assert geo.mesh is not None and len(geo.mesh.vertices) > 0
 
 
+def _children_of(c):
+    return [inst.object.original.name for inst in bpy.context.evaluated_depsgraph_get().object_instances
+            if inst.is_instance and inst.parent and inst.parent.original == c]
+
+
+@case
+def modify_clone_sort_and_weight_memory():
+    a, b = _cube(1, (0, 9, 0)), _cube(0.5, (0, 9, 0))
+    a.name, b.name = "A", "B"
+    c = api.create_cloner("linear", objects=[a, b], params={"Count": 4, "Order": "Sort"}, location=(0, 0, 0))
+    assert set(_children_of(c)) == {"A"}  # Sort: every clone starts as the first child
+    api.add_effector("plain", cloners=[c], falloff="Infinite",
+                     params={"Modify Clone": 1.0, "Select From": 2, "Local Space": False})
+    assert sorted(_children_of(c)) == ["A", "A", "B", "B"], _children_of(c)  # clones 2, 3 switched to B
+    sc = bpy.context.scene
+    sc.frame_set(1)
+    d = _line(3)
+    e = _lift([d], falloff="Box", size=5.0, params={"Memory": "Freeze", "Inner": 1.0})  # full strength on all
+    for f in range(1, 4):
+        sc.frame_set(f)
+    api.set_params(e, {"location": [0, 50, 0]})  # the field leaves
+    for f in range(4, 7):
+        sc.frame_set(f)
+    assert _heights(d) == [1.0, 1.0, 1.0], _heights(d)  # Freeze keeps the effect after the field leaves
+    api.set_params(e, {"Memory": "Off"})
+    assert _heights(d) == [0, 0, 0]
+
+
+@case
+def attribute_field_and_materials():
+    c = _line(4)
+    api.set_clone_weights(c, [0, 0.5, 1, 0.25])
+    e = _lift([c], falloff="Infinite")
+    api.add_field("Attribute", effectors=[e], params={"Attribute": "mb_weight"})
+    assert _heights(c) == [0, 0.5, 1.0, 0.25], _heights(c)
+    name = api.multi_material([c], ["#ff0000", "#00ff00", "#0000ff"], mode="Index")
+    mat = bpy.data.materials[name]
+    assert any(n.type == "VALTORGB" and len(n.color_ramp.elements) == 3 for n in mat.node_tree.nodes)
+    beat = bpy.data.materials[api.beat_material([c], bpm=120)]
+    value = next(n for n in beat.node_tree.nodes if n.type == "VALUE")
+    fc = beat.node_tree.animation_data.drivers[0]
+    assert fc.driver.is_simple_expression, fc.driver.expression  # no Python auto-run needed
+    sc = bpy.context.scene
+    peaks = []
+    for f in range(1, sc.render.fps + 1):
+        sc.frame_set(f)
+        peaks.append(value.outputs[0].default_value)  # the driven value after the frame change
+    assert max(peaks) > 0.9 and min(peaks) < 0.01, peaks
+
+
+@case
+def voronoi_selection_detailing_extras_and_connector_breaker():
+    cube = _cube()
+    vg = cube.vertex_groups.new(name="Break")
+    vg.add([v.index for v in cube.data.vertices if v.co.x > 0], 1.0, "REPLACE")
+    api.voronoi_fracture(cube, pieces=20, seed=3, selection_group="Break")
+    n = len(instances(cube))
+    assert 2 < n < 20, n  # the -X half stays one piece
+    api.voronoi_fracture(cube, selection_group="", detail=True, max_edge=0.25, noise_strength=0.08, depth=0.3,
+                         relax=2, smooth_inside=True, low_clip=0.2, high_clip=0.8)
+    assert any(p.use_smooth for p in cube.data.polygons) and abs(_volume(cube) - 8.0) < 0.8
+    api.voronoi_fracture(cube, detail=False, pieces=8)
+    breaker = bpy.data.objects.new("Breaker", None)
+    bpy.context.scene.collection.objects.link(breaker)
+    breaker.empty_display_type, breaker.empty_display_size = "CUBE", 5.0  # covers everything
+    res = api.make_dynamic(cube, break_object=breaker.name)
+    assert res["pieces"] == 8 and res["connectors"] == 0
+
+
+@case
+def mograph_cache_bakes_simulations():
+    sc = bpy.context.scene
+    sc.frame_start, sc.frame_end = 1, 10
+    c = _line(3)
+    api.add_effector("delay", cloners=[c])
+    res = api.bake_cache(c)
+    mod = next(m for m in c.modifiers if m.name.startswith("MBE "))
+    assert res["baked"] and any(bake.bake_target for bake in mod.bakes) is not None
+    assert api.bake_cache(c, free=True)["baked"] is False
+
+
 @case
 def delete_restores_sources():
     bpy.ops.mesh.primitive_cube_add()

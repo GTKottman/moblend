@@ -18,7 +18,7 @@ from .objects import (choice, get_object, get_objects, group_owners, new_empty, 
 from .params import PARAM_SOURCES, Param, set_params
 
 _LAYERED = (Kind.EFFECTOR, Kind.DEFORMER, Kind.FIELD)  # objects whose wrapper takes a field list
-_TYPES = {"time": "time", "step": "step", "object": "object", "shader": "shader", "sound": "sound"}
+_TYPES = {k: k for k in ("time", "step", "object", "shader", "sound", "attribute")}
 _COUNT_NODE = "MB LayerCount"
 KEY_FORMULA = "mb_formula"
 DEFAULT_FORMULA = "0.5 + 0.5 * sin((x + t) * tau)"
