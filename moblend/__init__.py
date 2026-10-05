@@ -30,6 +30,7 @@ def _autostart():
 
 
 def register():
+    api.register()
     for c in ui.CLASSES:
         bpy.utils.register_class(c)
     bpy.types.VIEW3D_MT_add.append(ui.add_menu)
@@ -41,3 +42,4 @@ def unregister():
     bpy.types.VIEW3D_MT_add.remove(ui.add_menu)
     for c in reversed(ui.CLASSES):
         bpy.utils.unregister_class(c)
+    api.unregister()

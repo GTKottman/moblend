@@ -2,6 +2,7 @@
 
 import math
 
+from ..catalog import COLOR_ATTR
 from .util import S, geometry_group, out
 from .core import split_centered
 
@@ -33,7 +34,7 @@ def _motext(b, g):
     mesh = b.node("GeometryNodeSetMaterial", {"Geometry": mesh, "Material": g["Material"]}).outputs[0]
     split = b.menu(list(TEXT_PARTS) + ["Whole"], g["Split"])
     group = b.index_switch("INT", split, [b.named(a, "INT") for a in TEXT_PARTS.values()] + [0])
-    return b.group(split_centered(), {"Mesh": mesh, "Group": group}).outputs[0]
+    return b.group(split_centered(), {"Geometry": mesh, "Group": group}).outputs[0]
 
 
 def _sweep(b, g):
@@ -56,13 +57,24 @@ def _sweep(b, g):
 
 
 def _fracture(b, g):
-    mesh = b.node("GeometryNodeRealizeInstances", {"Geometry": g["Geometry"]}).outputs[0]
+    """Pieces as clones: mesh islands (or a stored mb_piece id, e.g. from Voronoi Fracture), every polygon,
+    or every curve segment (PolyFX). O(elements)."""
+    geo = b.node("GeometryNodeRealizeInstances", {"Geometry": g["Geometry"]}).outputs[0]
+    parts = b.node("GeometryNodeSeparateComponents", {"Geometry": geo})
+    mesh, curves = out(parts, "Mesh"), out(parts, "Curve")
     polygons = b.compare(b.menu(["Islands", "Polygons"], g["Mode"]), 1)
-    # Splitting every edge turns each face into its own island.
-    split = b.node("GeometryNodeSplitEdges", {"Mesh": mesh}).outputs[0]
+    mesh = b.switch("GEOMETRY", polygons, mesh, b.node("GeometryNodeSplitEdges", {"Mesh": mesh}).outputs[0])
+    piece = b.node("GeometryNodeInputNamedAttribute", {"Name": "mb_piece"}, data_type="INT")
     island = out(b.node("GeometryNodeInputMeshIsland"), "Island Index")
-    return b.group(split_centered(), {"Mesh": b.switch("GEOMETRY", polygons, mesh, split),
-                                      "Group": island}).outputs[0]
+    use_piece = b.node("FunctionNodeBooleanMath", {0: out(piece, "Exists"), 1: b.bool_not(polygons)},
+                       operation="AND").outputs[0]
+    mesh_group = b.switch("INT", use_piece, island, out(piece, "Attribute"))
+    curve_group = out(b.node("GeometryNodeCurveOfPoint"), "Curve Index")
+    pieces = b.join(b.group(split_centered("FACE"), {"Geometry": mesh, "Group": mesh_group}).outputs[0],
+                    b.group(split_centered("CURVE"), {"Geometry": curves, "Group": curve_group}).outputs[0])
+    tint = b.rand("FLOAT_VECTOR", (0.15, 0.15, 0.15), (1, 1, 1), seed=g["Color Seed"])
+    color = b.mix("RGBA", g["Colorize"], (1, 1, 1, 1), tint)
+    return b.store(pieces, COLOR_ATTR, color, "FLOAT_COLOR", "INSTANCE")
 
 
 def _trails(b, g, clone_points):
@@ -218,7 +230,9 @@ BUILDERS = {
         S("Material", "MATERIAL"),
     ], _sweep),
     "fracture": geometry_group("MB Fracture", [
-        S("Mode", "MENU", desc="Islands: each loose part. Polygons: every face flies alone"),
+        S("Mode", "MENU", desc="Islands: each loose part (or Voronoi piece). Polygons: every face flies alone"),
+        S("Colorize", "BOOL", False, desc="Give every piece its own random MoGraph color"),
+        S("Color Seed", "INT", 0),
     ], _fracture, {"Mode": "Islands"}),
     "volume": geometry_group("MB Volume Builder", [
         S("Add", "COLLECTION", desc="Objects merged into the volume"),

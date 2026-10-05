@@ -16,8 +16,21 @@ from .generator import (add_boole, add_extrude, add_fracture, add_lathe, add_sub
                         create_volume_builder)
 from .field import add_field, field_users, fields_of, link_field, unlink_field  # noqa: F401
 from .loft import create_loft, set_loft_profiles, sort_along_spread  # noqa: F401
-from .voronoi import SETTINGS as VORONOI_SETTINGS, voronoi_fracture  # noqa: F401
+from . import voronoi as _voronoi
+from .voronoi import SECTIONS as VORONOI_SECTIONS, is_voronoi, restore as restore_fracture, voronoi_fracture  # noqa: F401
+from .connectors import make_dynamic  # noqa: F401
 from .scene import delete, evaluated_stats, list_mograph  # noqa: F401
+
+
+
+def register():
+    """Register the API's own Blender types (Voronoi settings). Called by the add-on and by tests."""
+    _voronoi.register()
+
+
+def unregister():
+    _voronoi.unregister()
+
 
 # kind -> function(object, **options); used by the UI and the MCP bridge.
 GENERATORS = {"fracture": add_fracture, "voronoi": voronoi_fracture, "tracer": add_tracer, "lathe": add_lathe,

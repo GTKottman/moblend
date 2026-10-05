@@ -38,6 +38,8 @@ class Rec:
             assert attr[2:-2] in holder, f"missing idprop {attr} on {holder}"
         else:
             assert hasattr(holder, attr), f"{holder} has no {attr}"
+            if text is None and attr in holder.bl_rna.properties:
+                text = holder.bl_rna.properties[attr].name
         self.log.append(("prop", text or attr))
 
     def label(self, text="", **k):
@@ -80,7 +82,8 @@ def draw(panel, o):
     log = []
     self = type("P", (), {})()
     self.layout = Rec(log)
-    for name in ("cloner", "effector", "deformer", "field", "falloff", "generic", "effector_list", "extra_modifiers"):
+    for name in ("cloner", "effector", "deformer", "field", "falloff", "voronoi", "generic", "effector_list",
+                 "extra_modifiers"):
         setattr(self, name, getattr(ui.MB_PT_main, name).__get__(self))
     panel.draw(self, Ctx(o))
     return log
@@ -106,7 +109,8 @@ api.add_effector("plain", name="P2", cloners=["T"])
 expect = {"cloner": ["Count X", "Spacing", "Radius", "R"],
           "effector": ["Strength", "Falloff", "Seed", "Mode", "Select Every", "Fields (top to bottom)"],
           "deformer": ["Amplitude", "Falloff"], "simple": ["Angle"], "motext": ["Text", "Split", "P2"],
-          "voronoi": ["Pieces", "Seed", "Gap", "Mode"],
+          "voronoi": ["Point Amount", "Distribution", "Offset Fragments", "Sort Result", "Enable Detailing",
+                      "Glue", "Mode", "Colorize"],
           "volume": ["Voxel Size", "Smooth", "Add", "Subtract"],
           "loft": ["Points", "Rows", "Caps", "Profiles (in order)"],
           "field": ["Blend", "Opacity", "Falloff", "R"]}
@@ -152,8 +156,10 @@ try:
     assert bpy.ops.moblend.cloner_mode(mode="grid") == {"FINISHED"}
     assert bpy.ops.moblend.add_generator(kind="motext") == {"FINISHED"}
     bpy.ops.mesh.primitive_cube_add()
-    assert bpy.ops.moblend.voronoi(pieces=5) == {"FINISHED"}
-    assert bpy.context.active_object["Voronoi Pieces"] == 5
+    assert bpy.ops.moblend.voronoi() == {"FINISHED"}
+    assert api.is_voronoi(bpy.context.active_object)
+    assert bpy.ops.moblend.voronoi(action="RESTORE") == {"FINISHED"}
+    assert not api.is_voronoi(bpy.context.active_object)
     assert bpy.ops.moblend.volume_builder() == {"FINISHED"}
     vb = bpy.context.active_object
     bpy.ops.mesh.primitive_cube_add(location=(0, 3, 0))

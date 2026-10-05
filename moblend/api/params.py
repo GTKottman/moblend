@@ -20,7 +20,7 @@ _KIND = {"NodeSocketFloat": "FLOAT", "NodeSocketInt": "INT", "NodeSocketBool": "
          "NodeSocketFont": "FONT", "NodeSocketMenu": "MENU", "NodeSocketRotation": "ROTATION",
          "NodeSocketSound": "SOUND"}
 _ID_COLLECTIONS = {"OBJECT": "objects", "COLLECTION": "collections", "MATERIAL": "materials", "FONT": "fonts",
-                   "SOUND": "sounds"}
+                   "SOUND": "sounds", "TEXTURE": "textures"}
 # ID kinds that can also be given as a file path -> (extensions, bpy.data collection to load into).
 _LOADABLE = {"FONT": (".ttf", ".otf", ".pfb", ".woff", ".woff2"),
              "SOUND": (".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".opus")}
@@ -44,11 +44,15 @@ def _to_bool(v):
 
 
 class Param:
-    """One editable value. `attr` is an RNA property name or '["key"]' for a custom property."""
+    """One editable value. `attr` is an RNA property name or '["key"]' for a custom property.
 
-    def __init__(self, name, holder, attr, kind, subtype=None, group=None, items=None, desc=""):
+    `on_change(obj)` (optional) runs once after set_params changed any parameter sharing it.
+    """
+
+    def __init__(self, name, holder, attr, kind, subtype=None, group=None, items=None, desc="", on_change=None):
         self.name, self.holder, self.attr = name, holder, attr
         self.kind, self.subtype, self.group, self.items, self.desc = kind, subtype, group, items, desc
+        self.on_change = on_change
 
     @property
     def angular(self):
@@ -64,6 +68,8 @@ class Param:
         if isinstance(v, bpy.types.ID):
             return v.name
         conv = math.degrees if self.angular else (lambda x: x)
+        if self.kind == "BOOLVECTOR":
+            return [bool(x) for x in v]
         if isinstance(v, float):
             return round(conv(v), 5)
         if hasattr(v, "__len__") and not isinstance(v, str):
@@ -93,6 +99,8 @@ class Param:
             raise ValueError(f"{self.name}: {v!r} not one of {self.items}")
         if k == "COLOR":
             return parse_color(v)
+        if k == "BOOLVECTOR":
+            return [_to_bool(x) for x in v]
         if k == "VECTOR":
             v = [float(x) for x in vec3(v)]
             return [math.radians(x) for x in v] if self.angular else v
@@ -164,6 +172,33 @@ def _node_params(node):
     return _socket_params(node.node_tree, holder, "default_value")
 
 
+# RNA property groups that hold extra parameters, registered by feature modules (avoids import cycles):
+# (applies(obj) -> bool, holder(obj) -> PropertyGroup, group name, on_change(obj) or None)
+RNA_SOURCES = []
+_RNA_KIND = {"BOOLEAN": "BOOL", "INT": "INT", "FLOAT": "FLOAT", "ENUM": "MENU", "STRING": "STRING"}
+
+
+def _rna_params(holder, group, on_change):
+    """Params for every property of an RNA struct (e.g. a PropertyGroup). O(properties)."""
+    res = []
+    for prop in holder.bl_rna.properties:
+        if prop.identifier in ("rna_type", "name"):
+            continue
+        if prop.type == "POINTER":
+            kind = {"Object": "OBJECT", "Collection": "COLLECTION", "Texture": "TEXTURE",
+                    "Material": "MATERIAL"}.get(prop.fixed_type.identifier, "OTHER")
+        else:
+            kind = _RNA_KIND.get(prop.type, "OTHER")
+            if getattr(prop, "array_length", 0) == 3:
+                kind = "BOOLVECTOR" if prop.type == "BOOLEAN" else "VECTOR"
+        items = [e.identifier for e in prop.enum_items] if prop.type == "ENUM" else None
+        p = Param(prop.name, holder, prop.identifier, kind, getattr(prop, "subtype", None), group, items,
+                  prop.description, on_change)
+        p.aliases = (prop.identifier,)
+        res.append(p)
+    return res
+
+
 def list_params(ref, modifier=None):
     """All editable parameters of a MoBlend object, primary modifier first. O(P)."""
     o = get_object(ref)
@@ -174,7 +209,11 @@ def list_params(ref, modifier=None):
         return [Param(key, o, f'["{key}"]', "FLOAT", "ANGLE" if key == "Angle" else None)
                 for key in ("Angle", "Factor") if key in o]
     want = norm(modifier) if modifier else None
-    return [p for m in mb_modifiers(o) if want is None or want in norm(m.name) for p in _modifier_params(m)]
+    res = [p for m in mb_modifiers(o) if want is None or want in norm(m.name) for p in _modifier_params(m)]
+    for applies, holder, group, on_change in RNA_SOURCES:
+        if (want is None or want in norm(group)) and applies(o):
+            res += _rna_params(holder(o), group, on_change)
+    return res
 
 
 def get_params(ref, modifier=None):
@@ -201,10 +240,11 @@ def set_params(ref, values, frame=None, modifier=None):
     ps = list_params(o, modifier)
     by_name = {}
     for p in ps:
-        by_name.setdefault(norm(p.name), p)
-        if p.group:
-            by_name.setdefault(norm(f"{p.group}/{p.name}"), p)
-    done, unknown = [], []
+        for alias in (p.name, *getattr(p, "aliases", ())):
+            by_name.setdefault(norm(alias), p)
+            if p.group:
+                by_name.setdefault(norm(f"{p.group}/{alias}"), p)
+    done, unknown, hooks = [], [], []
     for key, v in values.items():
         nk = norm(key)
         p = by_name.get(nk)
@@ -212,6 +252,8 @@ def set_params(ref, values, frame=None, modifier=None):
             p.set(v)
             if frame is not None:
                 p.keyframe(frame)
+            if p.on_change is not None and p.on_change not in hooks:
+                hooks.append(p.on_change)
             if p.name == "Falloff":
                 o.empty_display_type = _FALLOFF_DISPLAY.get(p.get(), "PLAIN_AXES")
         elif nk in _TRANSFORM:
@@ -224,6 +266,8 @@ def set_params(ref, values, frame=None, modifier=None):
             continue
         done.append(key)
     o.update_tag()  # custom-property changes (simple deformers) are not tagged automatically
+    for hook in hooks:
+        hook(o)
     if unknown:
         raise ValueError(f"Unknown parameter(s) {unknown} for {o.name}. Available: {[p.name for p in ps]}")
     return {"object": o.name, "set": done, "frame": frame}

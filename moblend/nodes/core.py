@@ -188,43 +188,37 @@ def instancer():
     return ensure("MB Instancer", build)
 
 
-def split_centered():
-    """O(V) grouping + O(G log G) KD-tree over one helper point per group, O(log G) per lookup."""
+def split_centered(domain="FACE"):
+    """Split geometry into one instance per group id, each pivoting at its own bounding-box center.
+
+    `domain` is FACE for meshes, CURVE for curves. Two splits of the same groups come out in the same
+    order: the first (uncentered) yields each piece's center via Instance Bounds, the second holds the
+    centered geometry and is moved back by that center. O(elements).
+    """
+    name = "MB Split Centered" if domain == "FACE" else f"MB Split Centered {domain.title()}"
+
     def build():
-        ng, gin, gout, b = new_group(
-            "MB Split Centered",
-            [S("Mesh", "GEOMETRY"), S("Group", "INT", 0)],
-            [S("Instances", "GEOMETRY")],
-            "Splits a mesh into one instance per group, each pivoting at its own center",
-        )
+        ng, gin, gout, b = new_group(name, [S("Geometry", "GEOMETRY"), S("Group", "INT", 0)],
+                                     [S("Instances", "GEOMETRY")],
+                                     "Splits geometry into one instance per group, each pivoting at its own center")
         g = gin.outputs
         pos = b.position()
         bounds = b.node("GeometryNodeFieldMinAndMax", {"Value": pos, "Group ID": g["Group"]},
                         data_type="FLOAT_VECTOR", domain="POINT")
         center = b.vmath("SCALE", b.vmath("ADD", out(bounds, "Min"), out(bounds, "Max")), scale=0.5)
-        geo = b.store(g["Mesh"], "mb_c", center, "FLOAT_VECTOR", "POINT")
-        geo = b.store(geo, "mb_g", g["Group"], "INT", "POINT")
-        c_attr, g_attr = b.named("mb_c", "FLOAT_VECTOR"), b.named("mb_g", "INT")
+        geo = b.store(g["Geometry"], "mb_g", g["Group"], "INT", "POINT")
+        group = b.named("mb_g", "INT")
+        first = b.node("GeometryNodeSplitToInstances", {"Geometry": geo, "Group ID": group}, domain=domain)
         centered = b.node("GeometryNodeSetPosition", {"Geometry": geo,
-                                                      "Position": b.vmath("SUBTRACT", pos, c_attr)}).outputs[0]
-        split = b.node("GeometryNodeSplitToInstances", {"Geometry": centered, "Group ID": g_attr}, domain="FACE")
-
-        # One helper point per group at x = group id, carrying the group's center.
-        idx = b.index()
-        first = b.node("GeometryNodeFieldMinAndMax", {"Value": idx, "Group ID": g_attr}, data_type="INT",
-                       domain="POINT")
-        drop = b.bool_not(b.compare(idx, out(first, "Min")))
-        pts = b.node("GeometryNodeDeleteGeometry", {"Geometry": geo, "Selection": drop}, domain="POINT").outputs[0]
-        pts = b.node("GeometryNodeMeshToPoints", {"Mesh": pts}, mode="VERTICES").outputs[0]
-        pts = b.node("GeometryNodeSetPosition", {"Geometry": pts, "Position": b.combine(g_attr)}).outputs[0]
-
-        near = b.node("GeometryNodeSampleNearest", {"Geometry": pts,
-                                                    "Sample Position": b.combine(out(split, "Group ID"))},
-                      domain="POINT").outputs[0]
-        cval = b.node("GeometryNodeSampleIndex", {"Geometry": pts, "Value": c_attr, "Index": near},
-                      data_type="FLOAT_VECTOR", domain="POINT").outputs[0]
-        res = b.node("GeometryNodeTranslateInstances", {"Instances": out(split, "Instances"),
-                                                        "Translation": cval, "Local Space": False}).outputs[0]
+                                                      "Position": b.vmath("SUBTRACT", pos, center)}).outputs[0]
+        second = b.node("GeometryNodeSplitToInstances", {"Geometry": centered, "Group ID": group}, domain=domain)
+        box = b.node("GeometryNodeInputInstanceBounds")
+        mid = b.vmath("SCALE", b.vmath("ADD", out(box, "Min"), out(box, "Max")), scale=0.5)
+        offset = b.node("GeometryNodeSampleIndex", {"Geometry": out(first, "Instances"), "Value": mid,
+                                                    "Index": b.index()},
+                        data_type="FLOAT_VECTOR", domain="INSTANCE").outputs[0]
+        res = b.node("GeometryNodeTranslateInstances", {"Instances": out(second, "Instances"),
+                                                        "Translation": offset, "Local Space": False}).outputs[0]
         b.link(init_color(b, res), gout.inputs[0])
         return ng
-    return ensure("MB Split Centered", build)
+    return ensure(name, build)

@@ -16,6 +16,7 @@ from mathutils import Vector  # noqa: E402
 from moblend import api  # noqa: E402
 
 FAILS = []
+api.register()  # Blender types the API owns (Voronoi settings)
 
 
 def reset():
@@ -380,23 +381,102 @@ def _evaluated_volume(o):
         ev.to_mesh_clear()
 
 
+def _cube(size=2, location=(0, 0, 0)):
+    bpy.ops.mesh.primitive_cube_add(size=size, location=location)
+    return bpy.context.object
+
+
 @case
 def voronoi_fracture_conserves_volume_and_refractures():
-    bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0, 0))
-    cube = bpy.context.object
+    cube = _cube()
     api.voronoi_fracture(cube, pieces=20, seed=1)
     assert len(instances(cube)) == 20, len(instances(cube))  # one effectable piece per cell
     assert abs(_volume(cube) - 8.0) < 0.01, _volume(cube)  # cells tile the cube exactly
     assert "MB Fracture Inside" in [m.name for m in cube.data.materials if m]
-    api.voronoi_fracture(cube, pieces=7, seed=1, gap=0.2)  # re-fracture from the original, not the pieces
+    api.voronoi_fracture(cube, pieces=7, seed=1, offset=0.05)  # re-fracture from the original
     assert len(instances(cube)) == 7
-    assert 3.0 < _volume(cube) < 7.9, _volume(cube)
-    assert cube["Voronoi Pieces"] == 7
+    assert 4.0 < _volume(cube) < 7.9, _volume(cube)
     before = [x.translation.z for x in instances(cube)]
     e = api.add_effector("plain", cloners=[cube.name], falloff="Infinite", params={"Position": [0, 0, 1],
                                                                                    "Local Space": False})
     after = [x.translation.z for x in instances(cube)]
     assert all(abs(a - b - 1.0) < 1e-4 for a, b in zip(after, before, strict=True)) and e
+
+
+@case
+def voronoi_caps_keep_holes_in_hollow_shells():
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, segments=32, ring_count=16)
+    ball = bpy.context.object
+    api.voronoi_fracture(ball, pieces=12, hull_only=True, thickness=0.25)
+    shell = api._voronoi._prepare(ball["mb_source"], ball.moblend_voronoi)
+    expected = shell.calc_volume()
+    shell.free()
+    assert abs(_volume(ball) - expected) / expected < 0.01, (_volume(ball), expected)  # rings capped as rings
+    assert len(instances(ball)) >= 12  # cells can split the shell into several pieces
+
+
+@case
+def voronoi_sorting_glue_and_selections():
+    cube = _cube()
+    api.voronoi_fracture(cube, pieces=16, sort="DIRECTION", sort_axis="X")
+    xs = [x.translation.x for x in instances(cube)]  # instance order = piece index
+    assert xs == sorted(xs), xs
+    api.voronoi_fracture(cube, invert_sort=True)
+    xs = [x.translation.x for x in instances(cube)]
+    assert xs == sorted(xs, reverse=True)
+    api.voronoi_fracture(cube, glue="CLUSTER", cluster_amount=4)
+    assert len(instances(cube)) == 4
+    attrs = cube.data.attributes
+    assert any(attrs["mb_inside_faces"].data[i].value for i in range(len(cube.data.polygons)))
+    assert any(d.value for d in attrs["mb_break_edges"].data)
+
+
+@case
+def voronoi_distributions_detailing_invert_and_sources():
+    cube = _cube()
+    api.voronoi_fracture(cube, pieces=30, distribution="NORMAL", std_dev=0.15)
+    near_center = sum(x.translation.length for x in instances(cube)) / 30
+    api.voronoi_fracture(cube, distribution="INVERSE_NORMAL")
+    assert near_center < sum(x.translation.length for x in instances(cube)) / 30
+    api.voronoi_fracture(cube, distribution="UNIFORM", pieces=6, offset=0.08)
+    pieces_volume = _volume(cube)
+    api.voronoi_fracture(cube, invert=True)
+    assert abs(pieces_volume + _volume(cube) - 8.0) < 0.05, (pieces_volume, _volume(cube))  # gaps + pieces
+    api.voronoi_fracture(cube, invert=False, offset=0.0, detail=True, max_edge=0.2, noise_strength=0.05)
+    assert len(cube.data.vertices) > 300 and abs(_volume(cube) - 8.0) < 0.6
+    coll = bpy.data.collections.new("Seeds")
+    for k, loc in enumerate(((-0.5, 0, 0), (0.5, 0, 0), (0, 0.6, 0))):
+        e = bpy.data.objects.new(f"S{k}", None)
+        e.location = loc
+        coll.objects.link(e)
+    api.voronoi_fracture(cube, detail=False, use_generator=False, sources=coll.name)
+    assert len(instances(cube)) == 3
+
+
+@case
+def voronoi_updates_live_from_set_params_and_ui():
+    cube = _cube()
+    api.voronoi_fracture(cube, pieces=10)
+    api.set_params(cube, {"Point Amount": 5})  # MCP path: refreshes immediately
+    assert len(instances(cube)) == 5
+    cube.moblend_voronoi.pieces = 9  # UI path: debounced re-fracture
+    assert cube.name in api._voronoi._pending
+    api._voronoi._flush()
+    assert len(instances(cube)) == 9
+    api.restore_fracture(cube)
+    assert len(cube.data.polygons) == 6 and not cube.modifiers
+
+
+@case
+def voronoi_connectors_make_rigid_bodies():
+    cube = _cube()
+    api.voronoi_fracture(cube, pieces=6, seed=2)
+    res = api.make_dynamic(cube, breaking_threshold=5)
+    pieces = [o for o in bpy.data.collections[res["collection"]].objects if o.type == "MESH"]
+    links = [o for o in bpy.data.collections[res["collection"]].objects if o.rigid_body_constraint]
+    assert len(pieces) == 6 and all(p.rigid_body for p in pieces)
+    assert res["connectors"] == len(links) > 0 and all(c.rigid_body_constraint.use_breaking for c in links)
+    assert sum(_volume(p) for p in pieces) > 7.9
 
 
 @case

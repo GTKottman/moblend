@@ -147,8 +147,15 @@ TOOLS = [
          {"loft": OBJ, "profiles": names()}, ["loft", "profiles"]),
     tool("add_generator",
          "Add a generator to an object: fracture (mode Islands|Polygons: pieces become effectable), voronoi "
-         "(pieces, seed, gap 0..0.9: convex Voronoi chunks, inner faces get an Inside material; call again to "
-         "re-fracture from the original), "
+         "(options = Voronoi settings, re-applied live: Sources — use_generator, distribution UNIFORM/NORMAL/"
+         "INVERSE_NORMAL/EXPONENTIAL, pieces, seed, std_dev, exp_axes, inside, high_quality, bounds_offset, "
+         "bounds_scale, sources (collection whose points seed cells), texture + texture_points, density_group "
+         "(vertex group); Object — colorize, ngons, offset (gap, m), invert, hull_only + thickness, close_holes, "
+         "scale_cells; Sorting — sort NONE/DIRECTION/DISTANCE, sort_axis, sort_object, along_spline, "
+         "invert_sort; Detailing — detail, max_edge, noise_strength, noise_scale, noise_seed, octaves, "
+         "noise_surface, keep_surface; Geometry Glue — glue NONE/CLUSTER/DISTANCE/OBJECT, cluster_amount, "
+         "cluster_seed, glue_distance, bigger, glue_object, glue_rest. Later changes: set_params with the same "
+         "names), "
          "tracer (options: params with Mode Connect = tube through the clones, or Trails = each clone leaves a "
          "tapering trail of Length frames; Radius, Sides, Taper), lathe (angle, steps, "
          "axis), extrude (depth), symmetry (axis), boole (cutter, operation DIFFERENCE/UNION/INTERSECT), "
@@ -156,6 +163,12 @@ TOOLS = [
          {"kind": enum(C.GENERATOR_KINDS), "object": OBJ,
           "options": {"type": "object", "description": "Kind-specific options, e.g. {\"mode\": \"Polygons\"} "
                       "or {\"cutter\": \"Cube\"}"}}, ["kind", "object"]),
+    tool("make_dynamic",
+         "Voronoi Connectors: turn a Voronoi-fractured object's pieces into rigid bodies joined by breakable "
+         "Fixed constraints between touching pieces (Blender rigid-body simulation).",
+         {"object": OBJ, "breaking_threshold": NUM, "mass": NUM, "connect": {"type": "boolean"}}, ["object"]),
+    tool("restore_fracture", "Undo a Voronoi fracture: original mesh back, Fracture modifier removed.",
+         {"object": OBJ}, ["object"]),
     tool("get_params", "Read every editable parameter of a MoBlend object with type, value and options.",
          {"object": OBJ, "modifier": {"type": "string", "description": "Only this modifier (e.g. Tracer)"}},
          ["object"]),

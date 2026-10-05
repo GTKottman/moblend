@@ -135,19 +135,25 @@ class MB_OT_add_generator(_MBOperator):
 
 
 class MB_OT_voronoi(_MBOperator):
-    """Cut the active mesh into convex Voronoi pieces that effectors can move. Running it again
-    re-fractures from the original mesh"""
+    """Fracture the active mesh into Voronoi pieces that effectors can move. Settings then live in the
+    sidebar and re-fracture automatically"""
     bl_idname = "moblend.voronoi"
     bl_label = "Voronoi Fracture"
-    pieces: IntProperty(name="Pieces", default=24, min=1, soft_max=500)
-    seed: IntProperty(name="Seed", default=0)
-    gap: bpy.props.FloatProperty(name="Gap", default=0.0, min=0.0, max=0.9, subtype="FACTOR")
+    action: EnumProperty(items=[("FRACTURE", "Fracture", ""), ("REFRESH", "Re-fracture", ""),
+                                ("RESTORE", "Restore Original", ""), ("DYNAMIC", "Make Dynamic", "")])
+    breaking_threshold: bpy.props.FloatProperty(name="Breaking Threshold", default=10.0, min=0.0)
 
     def run(self, ctx):
         o = ctx.active_object
         if not o or o.type != "MESH":
             return self.fail("Select a mesh first")
-        return api.voronoi_fracture(o, self.pieces, self.seed, self.gap)
+        if self.action == "RESTORE":
+            return api.restore_fracture(o)
+        if self.action == "DYNAMIC":
+            return api.make_dynamic(o, self.breaking_threshold)
+        if self.action == "REFRESH" and api.is_voronoi(o):
+            return api._voronoi.refresh(o)
+        return api.voronoi_fracture(o)
 
 
 def _selected_meshes(ctx, exclude=None):
@@ -465,6 +471,20 @@ class MB_PT_main(bpy.types.Panel):
             box.prop(o, "scale", text="Size")
         _draw_users(layout.box(), o, "Deforms", "MODIFIER", unlink=False)
 
+    def voronoi(self, layout, o):
+        """Voronoi Fracture settings in Cinema 4D's tab order; changes re-fracture automatically."""
+        settings = o.moblend_voronoi
+        layout.label(text=f"{o.name} · Voronoi Fracture", icon="MOD_EXPLODE")
+        for section, names in api.VORONOI_SECTIONS.items():
+            box = layout.box()
+            box.label(text=section)
+            for name in names:
+                box.prop(settings, name)
+        row = layout.row(align=True)
+        _op(row, "moblend.voronoi", "FILE_REFRESH", text="Re-fracture", action="REFRESH")
+        _op(row, "moblend.voronoi", "LOOP_BACK", text="Restore", action="RESTORE")
+        _op(layout, "moblend.voronoi", "RIGID_BODY", text="Make Dynamic (Connectors)", action="DYNAMIC")
+
     def field(self, layout, o):
         box = _header(layout, o, "Field", FIELD_ICONS.get(o.get(KEY_TYPE, "").title(), "SPHERE"))
         _draw_params(box, api.list_params(o))
@@ -477,13 +497,8 @@ class MB_PT_main(bpy.types.Panel):
             _op(row, "moblend.link_field", "X", owner=owner.name, field=o.name, unlink=True)
 
     def generic(self, layout, o):
-        if api.VORONOI_SETTINGS["pieces"] in o:
-            box = layout.box()
-            box.label(text="Voronoi Fracture", icon="MOD_EXPLODE")
-            for key in api.VORONOI_SETTINGS.values():
-                box.prop(o, f'["{key}"]', text=key.removeprefix("Voronoi "))
-            _op(box, "moblend.voronoi", "FILE_REFRESH", text="Re-fracture",
-                **{arg: o[key] for arg, key in api.VORONOI_SETTINGS.items()})
+        if api.is_voronoi(o):
+            self.voronoi(layout, o)
         self.extra_modifiers(layout, o)
         if api.mb_kind(o) == Kind.LOFT:
             col = layout.box().column(align=True)
