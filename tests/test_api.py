@@ -256,6 +256,37 @@ def sound_effector_lifts_the_clone_hearing_the_tone():
     assert all(x.translation.z > 1.9 for x in instances(c))
 
 
+def _heights(c):
+    return [round(x.translation.z, 2) for x in sorted(instances(c), key=lambda m: m.translation.x)]
+
+
+@case
+def fields_layer_by_blend_mode():
+    c = api.create_cloner("linear", params={"Count": 9, "Offset": [1, 0, 0]}, location=(0, 0, 0))
+    e = api.add_effector("plain", cloners=[c.name], params={"Position": [0, 0, 1], "Local Space": False})
+    api.add_field("Box", effectors=[e], location=(2, 0, 0), size=1.6)
+    z = _heights(c)
+    assert z[2] == 1.0 and z[0] == 0 and z[6] == 0, z  # the effector's own sphere became Infinite
+    f2 = api.add_field("Box", effectors=[e], location=(6, 0, 0), size=1.6, blend="Max")
+    assert _heights(c)[6] == 1.0 and api.fields_of(e) == ["Box Field", "Box Field.001"]
+    api.set_params(f2, {"Blend": "Subtract", "location": [2, 0, 0], "size": 0.6})
+    assert _heights(c)[2] == 0.0  # carved out of the first box
+    api.delete(f2)
+    assert api.fields_of(e) == ["Box Field"] and _heights(c)[2] == 1.0
+
+
+@case
+def selection_pattern_limits_effect():
+    c = api.create_cloner("linear", params={"Count": 8, "Offset": [1, 0, 0]}, location=(0, 0, 0))
+    e = api.add_effector("plain", cloners=[c.name], falloff="Infinite",
+                         params={"Position": [0, 0, 1], "Local Space": False, "Select Every": 2, "Select Offset": 1})
+    assert _heights(c) == [0, 1, 0, 1, 0, 1, 0, 1]
+    api.set_params(e, {"Select Every": 1, "Select Offset": 0, "Select From": 2, "Select To": 4})
+    assert _heights(c) == [0, 0, 1, 1, 1, 0, 0, 0]
+    api.set_params(e, {"Invert Selection": True})
+    assert _heights(c) == [1, 1, 0, 0, 0, 1, 1, 1]
+
+
 @case
 def delay_effector_lags():
     sc = bpy.context.scene

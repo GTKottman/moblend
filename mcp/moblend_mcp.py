@@ -72,7 +72,8 @@ EFFECTOR_DOC = (
     "arrangement; animate Strength), sound (params Sound = sound name or audio file path, Mode Spread (each "
     "clone its own log-spaced band between Low and High Hz) or All, Gain, Time Offset). The effector "
     "object's scale is the falloff size. Common params: Strength, Position, Rotation, Scale (added, "
-    "-1 = vanish), Uniform Scale, Color, Color Mix, Local Space, Falloff, Inner, Invert.")
+    "-1 = vanish), Uniform Scale, Color, Color Mix, Local Space, Falloff, Inner, Invert. MoGraph Selection: "
+    "Select From, Select To (-1 = last), Select Every, Select Offset, Invert Selection.")
 
 TOOLS = [
     tool("status", "Check that Blender with MoBlend is reachable; returns Blender version and file.", cmd="ping"),
@@ -97,6 +98,17 @@ TOOLS = [
          {"type": enum(C.EFFECTOR_TYPES), "cloners": names("Targets to affect"), "params": PARAMS,
           "location": VEC, "size": {"type": "number", "description": "Falloff radius (object scale)"},
           "falloff": enum(C.FALLOFF_SHAPES), "name": STR}, ["type"]),
+    tool("add_field",
+         "Add a Field (C4D field list layer): a shape object sized by its scale, linked into effectors' or GN "
+         "deformers' field lists. Layers combine top to bottom by Blend (Multiply, Max = union, Min = "
+         "intersection, Add, Subtract) and Opacity. The owner's own falloff switches to Infinite on its first "
+         "field. Params: Falloff, Inner, Invert, Noise Scale/Speed, Blend, Opacity.",
+         {"shape": enum(C.FALLOFF_SHAPES[1:]), "effectors": names("Effectors / GN deformers to add it to"),
+          "params": PARAMS, "location": VEC, "size": NUM, "blend": enum(C.FIELD_BLENDS), "name": STR}, ["shape"]),
+    tool("link_field", "Append an existing field to an effector's / GN deformer's field list.",
+         {"field": OBJ, "owner": OBJ}, ["field", "owner"]),
+    tool("unlink_field", "Remove a field from an effector's / GN deformer's field list.",
+         {"field": OBJ, "owner": OBJ}, ["field", "owner"]),
     tool("link_effector", "Link an existing effector to another cloner/MoText/fracture (shared params).",
          {"effector": OBJ, "target": OBJ}, ["effector", "target"]),
     tool("unlink_effector", "Remove an effector from a target's effector list.",

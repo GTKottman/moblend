@@ -3,7 +3,7 @@
 All groups evaluate in O(elements) per frame unless noted.
 """
 
-from ..catalog import COLOR_ATTR, FALLOFF_SHAPES
+from ..catalog import COLOR_ATTR, FALLOFF_SHAPES, FIELD_BLENDS
 from .util import S, new_group, ensure, set_menu_defaults, out
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
@@ -57,26 +57,81 @@ def falloff():
     return ensure("MB Falloff", build)
 
 
-def falloff_group(name, geo_name, extra, body, falloff_default="Sphere", menus=None, desc=""):
+# MoGraph Selection as an index pattern (effectors only): which clones an effector may touch.
+SELECTION_INPUTS = [
+    S("Select From", "INT", 0, 0, desc="First clone index affected"),
+    S("Select To", "INT", -1, -1, desc="Last clone index affected (-1 = the last clone)"),
+    S("Select Every", "INT", 1, 1, desc="Affect every Nth clone"),
+    S("Select Offset", "INT", 0, desc="Shift the Every pattern"),
+    S("Invert Selection", "BOOL", False),
+]
+SELECTION_NAMES = frozenset(s["name"] for s in SELECTION_INPUTS)
+LAYERS_INPUT = "Layers"  # combined weight of linked Field objects, wired by api/field.py (1 = no fields)
+
+
+def _selection(b, g):
+    """1 for clones inside the From/To/Every/Offset pattern, else 0 (or the reverse when inverted)."""
+    idx = b.index()
+    after_from = b.math("GREATER_THAN", idx, b.math("SUBTRACT", g["Select From"], 0.5))
+    before_to = b.math("MAXIMUM", b.math("LESS_THAN", g["Select To"], 0.0),
+                       b.math("LESS_THAN", idx, b.math("ADD", g["Select To"], 0.5)))
+    on_step = b.math("LESS_THAN", b.math("FLOORED_MODULO", b.math("SUBTRACT", idx, g["Select Offset"]),
+                                         b.at_least(g["Select Every"])), 0.5)
+    sel = b.math("MULTIPLY", b.math("MULTIPLY", after_from, before_to), on_step)
+    return b.mix("FLOAT", g["Invert Selection"], sel, b.math("SUBTRACT", 1.0, sel))
+
+
+def falloff_group(name, geo_name, extra, body, falloff_default="Sphere", menus=None, desc="", selection=False):
     """Builder for an effector/deformer type group.
 
-    Interface: geometry, Transform (placing object), Strength, falloff inputs,
-    then `extra`. `body(b, g, weight)` returns the result geometry, where
-    `weight` = falloff x Strength (a field).
+    Interface: geometry, Transform (placing object), Strength, Layers (field objects), falloff inputs,
+    selection inputs (if `selection`), then `extra`. `body(b, g, weight)` returns the result geometry,
+    where `weight` = falloff x Strength x Layers (x selection) as a field.
     """
     def build():
         head = [S(geo_name, "GEOMETRY"), S("Transform", "MATRIX", hide_value=True),
-                S("Strength", "FLOAT", 1.0, desc="Overall effect amount")]
-        ng, gin, gout, b = new_group(name, head + FALLOFF_INPUTS + extra, [S(geo_name, "GEOMETRY")], desc)
+                S("Strength", "FLOAT", 1.0, desc="Overall effect amount"),
+                S(LAYERS_INPUT, "FLOAT", 1.0, hide_value=True, desc="Weight from linked Field objects")]
+        inputs = head + FALLOFF_INPUTS + (SELECTION_INPUTS if selection else []) + extra
+        ng, gin, gout, b = new_group(name, inputs, [S(geo_name, "GEOMETRY")], desc)
         g = gin.outputs
         fo = b.group(falloff(), {"Transform": g["Transform"]})
         for spec in FALLOFF_INPUTS:
             b.link(g[spec["name"]], fo.inputs[spec["name"]])
-        weight = b.math("MULTIPLY", fo.outputs["Weight"], g["Strength"])
+        weight = b.math("MULTIPLY", b.math("MULTIPLY", fo.outputs["Weight"], g["Strength"]), g[LAYERS_INPUT])
+        if selection:
+            weight = b.math("MULTIPLY", weight, _selection(b, g))
         b.link(body(b, g, weight), gout.inputs[0])
         set_menu_defaults(ng, {"Falloff": falloff_default, **(menus or {})})
         return ng
     return lambda: ensure(name, build)
+
+
+def field():
+    """One layer of a field list: blends this field's falloff into the weight of the layers before it."""
+    def build():
+        ng, gin, gout, b = new_group(
+            "MB Field",
+            [S("Previous", "FLOAT", 1.0, hide_value=True), S("First", "BOOL", True, hide_value=True),
+             S("Transform", "MATRIX", hide_value=True),
+             S("Blend", "MENU", desc="How this field combines with the fields above it"),
+             S("Opacity", "FLOAT", 1.0, 0.0, 1.0, "FACTOR")] + FALLOFF_INPUTS,
+            [S("Weight", "FLOAT")], "Field layer: weight from a shape, blended with the previous layers")
+        g = gin.outputs
+        fo = b.group(falloff(), {"Transform": g["Transform"]})
+        for spec in FALLOFF_INPUTS:
+            b.link(g[spec["name"]], fo.inputs[spec["name"]])
+        w, prev = fo.outputs["Weight"], g["Previous"]
+        ops = {"Multiply": b.math("MULTIPLY", prev, w), "Max": b.math("MAXIMUM", prev, w),
+               "Min": b.math("MINIMUM", prev, w), "Add": b.math("ADD", prev, w),
+               "Subtract": b.math("SUBTRACT", prev, w)}
+        blended = b.index_switch("FLOAT", b.menu(FIELD_BLENDS, g["Blend"]), [ops[k] for k in FIELD_BLENDS])
+        blended = b.math("MINIMUM", b.math("MAXIMUM", blended, 0.0), 1.0)
+        layered = b.mix("FLOAT", g["Opacity"], prev, blended)
+        b.link(b.switch("FLOAT", g["First"], layered, b.math("MULTIPLY", w, g["Opacity"])), gout.inputs[0])
+        set_menu_defaults(ng, {"Falloff": "Sphere", "Blend": "Multiply"})
+        return ng
+    return ensure("MB Field", build)
 
 
 def apply():

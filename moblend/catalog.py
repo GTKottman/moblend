@@ -10,6 +10,7 @@ import tempfile
 CLONER_MODES = ("linear", "radial", "grid", "object", "spline")
 EFFECTOR_TYPES = ("plain", "random", "step", "noise", "wave", "time", "target", "delay", "inheritance", "sound")
 FALLOFF_SHAPES = ("Infinite", "Sphere", "Box", "Cylinder", "Linear", "Noise", "Random")
+FIELD_BLENDS = ("Multiply", "Max", "Min", "Add", "Subtract")
 SIMPLE_DEFORMERS = {"bend": "BEND", "twist": "TWIST", "taper": "TAPER", "stretch": "STRETCH"}
 GN_DEFORMERS = ("wave", "spherify", "shear", "bulge", "displace")
 DEFORMER_TYPES = tuple(SIMPLE_DEFORMERS) + GN_DEFORMERS
@@ -30,6 +31,7 @@ class Kind:
     FRACTURE = "fracture"
     VOLUME = "volume"
     LOFT = "loft"
+    FIELD = "field"
 
 
 # Custom properties stored on objects.
@@ -47,6 +49,8 @@ KEY_SOURCE = "mb_source"  # original mesh kept by Voronoi Fracture for re-fractu
 GROUP_PREFIX = "MB "              # shared, generated node groups ("MB Falloff", ...)
 EFFECTOR_GROUP_PREFIX = "MBFX "   # one wrapper per effector object
 DEFORMER_GROUP_PREFIX = "MBDF "   # one wrapper per GN deformer object
+FIELD_GROUP_PREFIX = "MBFL "      # one wrapper per Field object
+LAYER_NODE_PREFIX = "MB Layer "   # field layer nodes inside an effector/deformer wrapper, numbered in order
 EFFECTOR_MOD_PREFIX = "MBE "      # an effector's modifier on a target
 DEFORMER_MOD_PREFIX = "MBD "      # a deformer's modifier on a target
 CLONER_MOD = "MB Cloner"

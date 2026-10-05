@@ -31,7 +31,9 @@ add-on works in any file you open.
 |---|---|
 | Cloner: Linear / Radial / Grid (incl. Honeycomb) / Object / Spline | Cloner with the same modes. Clones iterate through children or pick randomly, and keep each child's rotation and scale |
 | Plain, Random, Step, Shader, Formula, Time, Target, Delay, Inheritance, Sound effectors | plain, random (random or noise mode), step, noise, wave, time, target, delay (blend or spring), inheritance (morph into another cloner), sound (each clone its own frequency band) |
-| Effector position/rotation/scale/color + fields | Same parameters. Falloff fields: Infinite, Sphere, Box, Cylinder, Linear, Noise, Random, plus Inner and Invert |
+| Effector position/rotation/scale/color + fields | Same parameters. Falloff shapes: Infinite, Sphere, Box, Cylinder, Linear, Noise, Random, plus Inner and Invert |
+| Field lists | Field objects layered into effectors and deformers with Multiply / Max / Min / Add / Subtract blending and opacity; one field can drive many effectors |
+| MoGraph Selection | Per-effector index pattern: From, To, Every, Offset, Invert |
 | MoGraph color | Effector **Color** + **Color Mix**. The "MB MoGraph Color" material displays it |
 | MoText (character / word / line) | MoText: upright, extruded, split into pieces effectors can move |
 | Fracture (explode segments) | Fracture: by islands, or every polygon on its own |
@@ -52,8 +54,8 @@ add-on works in any file you open.
 - [x] Volume Builder (add/subtract sets, smooth, fillet, offset)
 - [x] Loft (ordered profiles, smooth rails, end caps in any plane)
 - [x] Tracer trails
-- [ ] MoGraph Selection
-- [ ] Layered field lists (several falloffs per effector)
+- [x] MoGraph Selection (index pattern: from / to / every / offset / invert)
+- [x] Layered field lists (Field objects with Multiply / Max / Min / Add / Subtract blending)
 
 ## Install
 
@@ -85,7 +87,7 @@ add-on preferences. Unix sockets aren't available on Windows, so the bridge is
 disabled there for now.
 
 Tools:
-- Building: `create_cloner`, `add_effector`, `link_effector`, `add_deformer`, `create_motext`, `create_sweep`, `add_generator`
+- Building: `create_cloner`, `add_effector`, `link_effector`, `add_field`, `link_field`, `add_deformer`, `create_motext`, `create_sweep`, `create_loft`, `create_volume_builder`, `add_generator` (incl. `voronoi`)
 - Parameters and animation: `get_params`, `set_params` (pass `frame` to keyframe), `keyframes`
 - Materials: `set_material`, `set_color_material`
 - Seeing the result: `render_preview` (returns the image), `frame_camera`, `stats`

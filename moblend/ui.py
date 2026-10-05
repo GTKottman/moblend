@@ -4,10 +4,11 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
 
 from . import api, bridge
-from .catalog import (CLONER_MOD, CLONER_MODES, DEFORMER_TYPES, EFFECTOR_TYPES, GROUP_PREFIX, KEY_CLONES,
+from .catalog import (CLONER_MOD, CLONER_MODES, DEFORMER_TYPES, EFFECTOR_TYPES, FALLOFF_SHAPES, GROUP_PREFIX,
+                      KEY_CLONES,
                       KEY_PROFILES, KEY_TYPE, KEY_VERSION, KEY_VOLUME_SETS, Kind)
 from .nodes import build_all
-from .nodes.core import FALLOFF_NAMES
+from .nodes.core import FALLOFF_NAMES, SELECTION_NAMES
 
 CLONER_ICONS = {"linear": "IPO_LINEAR", "radial": "MESH_CIRCLE", "grid": "MESH_GRID",
                 "object": "MESH_ICOSPHERE", "spline": "CURVE_BEZCURVE"}
@@ -29,6 +30,10 @@ GENERATOR_MENU = (("motext", "MoText", "FONT_DATA"), ("sweep", "Sweep (active cu
                   ("symmetry", "Symmetry", "MOD_MIRROR"), ("boole", "Boole (cut active)", "MOD_BOOLEAN"),
                   ("subdivision", "Subdivision", "MOD_SUBSURF"))
 GENERATOR_OPERATORS = {"voronoi": "moblend.voronoi", "volume": "moblend.volume_builder", "loft": "moblend.loft"}
+FIELD_ICONS = {"Infinite": "WORLD", "Sphere": "SPHERE", "Box": "CUBE", "Cylinder": "MESH_CYLINDER",
+               "Linear": "IPO_LINEAR", "Noise": "FORCE_TURBULENCE", "Random": "RNDCURVE"}
+FIELD_SHAPES = tuple(s for s in FALLOFF_SHAPES if s != "Infinite")
+LAYERED = (Kind.EFFECTOR, Kind.DEFORMER)
 EFFECTABLE = (Kind.CLONER, Kind.MOTEXT, Kind.FRACTURE)
 OWNERS = (Kind.EFFECTOR, Kind.DEFORMER, Kind.SIMPLE_DEFORMER)
 
@@ -184,6 +189,33 @@ class MB_OT_volume_members(_MBOperator):
         return api.add_volume_objects(o, objs, self.mode)
 
 
+class MB_OT_add_field(_MBOperator):
+    """Add a field; it joins the field list of every selected effector / GN deformer"""
+    bl_idname = "moblend.add_field"
+    bl_label = "Add Field"
+    shape: EnumProperty(items=[(s, s, "") for s in FIELD_SHAPES])
+
+    def run(self, ctx):
+        owners = [o for o in ctx.selected_objects if api.mb_kind(o) in LAYERED]
+        return api.add_field(self.shape, owners, location=ctx.scene.cursor.location.copy())
+
+
+class MB_OT_link_field(_MBOperator):
+    """Add selected fields to an effector's field list, or remove one"""
+    bl_idname = "moblend.link_field"
+    bl_label = "Link Field"
+    owner: StringProperty()
+    field: StringProperty()
+    unlink: BoolProperty()
+
+    def run(self, ctx):
+        if self.unlink:
+            return api.unlink_field(self.field, self.owner)
+        for f in (o for o in ctx.selected_objects if api.mb_kind(o) == Kind.FIELD):
+            api.link_field(f, self.owner)
+        return True
+
+
 class MB_OT_cloner_mode(_MBOperator):
     """Switch the cloner's mode"""
     bl_idname = "moblend.cloner_mode"
@@ -269,6 +301,7 @@ def _operator_menu(idname, label, operator, prop, names, icons):
 MB_MT_cloners = _operator_menu("MB_MT_cloners", "Cloner", "moblend.add_cloner", "mode", CLONER_MODES, CLONER_ICONS)
 MB_MT_effectors = _operator_menu("MB_MT_effectors", "Effectors", "moblend.add_effector", "type", EFFECTOR_TYPES,
                                  EFFECTOR_ICONS)
+MB_MT_fields = _operator_menu("MB_MT_fields", "Fields", "moblend.add_field", "shape", FIELD_SHAPES, FIELD_ICONS)
 MB_MT_deformers = _operator_menu("MB_MT_deformers", "Deformers", "moblend.add_deformer", "type", DEFORMER_TYPES,
                                  DEFORMER_ICONS)
 
@@ -289,7 +322,8 @@ class MB_MT_generators(bpy.types.Menu):
 
 
 SUBMENUS = (("MB_MT_cloners", "Cloner", "MOD_ARRAY"), ("MB_MT_effectors", "Effector", "FORCE_FORCE"),
-            ("MB_MT_generators", "Generator", "MODIFIER"), ("MB_MT_deformers", "Deformer", "MOD_SIMPLEDEFORM"))
+            ("MB_MT_generators", "Generator", "MODIFIER"), ("MB_MT_deformers", "Deformer", "MOD_SIMPLEDEFORM"),
+            ("MB_MT_fields", "Field", "SPHERE"))
 
 
 class MB_MT_add(bpy.types.Menu):
@@ -355,7 +389,7 @@ class MB_PT_main(bpy.types.Panel):
         if o is None:
             return
         draw = {Kind.CLONER: self.cloner, Kind.EFFECTOR: self.effector, Kind.DEFORMER: self.deformer,
-                Kind.SIMPLE_DEFORMER: self.deformer}.get(api.mb_kind(o), self.generic)
+                Kind.SIMPLE_DEFORMER: self.deformer, Kind.FIELD: self.field}.get(api.mb_kind(o), self.generic)
         try:
             draw(layout, o)
         except Exception as e:  # a stale/renamed object must never break the whole panel
@@ -398,20 +432,49 @@ class MB_PT_main(bpy.types.Panel):
 
     def effector(self, layout, o):
         params = api.list_params(o)
-        _draw_params(_header(layout, o, "Effector", "FORCE_FORCE"), params, skip=FALLOFF_NAMES)
+        _draw_params(_header(layout, o, "Effector", "FORCE_FORCE"), params, skip=FALLOFF_NAMES | SELECTION_NAMES)
+        self.falloff(layout, o, params)
         box = layout.box()
-        box.label(text="Falloff (size = object scale)", icon="SPHERE")
-        _draw_params(box, params, only=FALLOFF_NAMES)
-        box.prop(o, "scale", text="Size")
+        box.label(text="Selection", icon="RESTRICT_SELECT_OFF")
+        _draw_params(box, params, only=SELECTION_NAMES)
         box = layout.box()
         _draw_users(box, o, "Affects", "LINKED", unlink=True)
         _op(box, "moblend.link", "ADD", text="Link to Selected", effector=o.name, target="", unlink=False)
 
+    def falloff(self, layout, o, params):
+        box = layout.box()
+        box.label(text="Falloff (size = object scale)", icon="SPHERE")
+        _draw_params(box, params, only=FALLOFF_NAMES)
+        box.prop(o, "scale", text="Size")
+        col = box.column(align=True)
+        col.label(text="Fields (top to bottom)", icon="MOD_PHYSICS")
+        for name in api.fields_of(o):
+            row = col.row()
+            row.label(text=name, icon=FIELD_ICONS.get(bpy.data.objects[name].get(KEY_TYPE, "").title(), "SPHERE"))
+            _op(row, "moblend.link_field", "X", owner=o.name, field=name, unlink=True)
+        _op(col, "moblend.link_field", "ADD", text="Add Selected Fields", owner=o.name, field="", unlink=False)
+
     def deformer(self, layout, o):
+        params = api.list_params(o)
         box = _header(layout, o, "Deformer", "MOD_SIMPLEDEFORM")
+        if api.mb_kind(o) == Kind.DEFORMER:
+            _draw_params(box, params, skip=FALLOFF_NAMES)
+            self.falloff(layout, o, params)
+        else:
+            _draw_params(box, params)
+            box.prop(o, "scale", text="Size")
+        _draw_users(layout.box(), o, "Deforms", "MODIFIER", unlink=False)
+
+    def field(self, layout, o):
+        box = _header(layout, o, "Field", FIELD_ICONS.get(o.get(KEY_TYPE, "").title(), "SPHERE"))
         _draw_params(box, api.list_params(o))
         box.prop(o, "scale", text="Size")
-        _draw_users(box, o, "Deforms", "MODIFIER", unlink=False)
+        col = layout.box().column(align=True)
+        col.label(text="In the field lists of", icon="LINKED")
+        for owner in api.field_users(o):
+            row = col.row()
+            row.label(text=owner.name, icon="FORCE_FORCE")
+            _op(row, "moblend.link_field", "X", owner=owner.name, field=o.name, unlink=True)
 
     def generic(self, layout, o):
         if api.VORONOI_SETTINGS["pieces"] in o:
@@ -470,5 +533,6 @@ CLASSES = (MB_OT_add_cloner, MB_OT_add_effector, MB_OT_add_deformer, MB_OT_add_g
            MB_OT_volume_builder, MB_OT_volume_members, MB_OT_loft,
            MB_OT_cloner_mode,
            MB_OT_link, MB_OT_move_effector, MB_OT_color_material, MB_OT_bridge, MB_OT_rebuild,
-           MB_MT_cloners, MB_MT_effectors, MB_MT_deformers, MB_MT_generators, MB_MT_add,
+           MB_OT_add_field, MB_OT_link_field,
+           MB_MT_cloners, MB_MT_effectors, MB_MT_deformers, MB_MT_fields, MB_MT_generators, MB_MT_add,
            MB_PT_main, MB_PT_bridge, MB_Prefs)

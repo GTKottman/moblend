@@ -4,6 +4,7 @@ import bpy
 
 from ..catalog import (DEFORMER_MOD_PREFIX, EFFECTOR_MOD_PREFIX, GROUP_PREFIX, KEY_CLONES, KEY_GROUP,
                        KEY_TYPE, Kind)
+from .field import field_users, unlink_field
 from .objects import detach, get_object, mb_kind, usage_index, users_of
 
 _OWNERS = (Kind.EFFECTOR, Kind.DEFORMER, Kind.SIMPLE_DEFORMER)
@@ -21,6 +22,8 @@ def list_mograph():
         item = {"name": o.name, "kind": k or "object", "type": o.get(KEY_TYPE, "")}
         if k in _OWNERS:
             item["affects"] = usage.get(o.name, [])
+        elif k == Kind.FIELD:
+            item["affects"] = [x.name for x in field_users(o)]
         else:
             item["modifiers"] = [m.name for m in o.modifiers]
             if k == Kind.CLONER:
@@ -37,6 +40,9 @@ def delete(ref):
     if k in _OWNERS:
         for t in users_of(o):
             detach(o, t)
+    elif k == Kind.FIELD:
+        for owner in field_users(o):
+            unlink_field(o, owner)
     elif k == Kind.CLONER and o.get(KEY_CLONES) is not None:
         coll = o[KEY_CLONES]
         scene_coll = bpy.context.scene.collection

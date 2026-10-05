@@ -8,7 +8,7 @@ TABLES = {"cloner": cloners.BUILDERS, "effector": effectors.BUILDERS, "deformer"
 
 def build_all():
     """Build every MoBlend node group; returns them. O(total nodes)."""
-    groups = [f() for f in (core.falloff, core.apply, core.instancer, core.split_centered)]
+    groups = [f() for f in (core.falloff, core.field, core.apply, core.instancer, core.split_centered)]
     for table in TABLES.values():
         groups += [f() for f in table.values()]
     return groups

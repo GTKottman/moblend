@@ -80,7 +80,7 @@ def draw(panel, o):
     log = []
     self = type("P", (), {})()
     self.layout = Rec(log)
-    for name in ("cloner", "effector", "deformer", "generic", "effector_list", "extra_modifiers"):
+    for name in ("cloner", "effector", "deformer", "field", "falloff", "generic", "effector_list", "extra_modifiers"):
         setattr(self, name, getattr(ui.MB_PT_main, name).__get__(self))
     panel.draw(self, Ctx(o))
     return log
@@ -100,13 +100,16 @@ objs = {
     "voronoi": api.voronoi_fracture(api.get_object(c.name) and _cube(), pieces=4),
     "volume": api.create_volume_builder(add=[_cube()]),
     "loft": api.create_loft([_curve(0), _curve(2)]),
+    "field": api.add_field("Box", effectors=["R"]),
 }
 api.add_effector("plain", name="P2", cloners=["T"])
-expect = {"cloner": ["Count X", "Spacing", "Radius", "R"], "effector": ["Strength", "Falloff", "Seed", "Mode"],
+expect = {"cloner": ["Count X", "Spacing", "Radius", "R"],
+          "effector": ["Strength", "Falloff", "Seed", "Mode", "Select Every", "Fields (top to bottom)"],
           "deformer": ["Amplitude", "Falloff"], "simple": ["Angle"], "motext": ["Text", "Split", "P2"],
           "voronoi": ["Pieces", "Seed", "Gap", "Mode"],
           "volume": ["Voxel Size", "Smooth", "Add", "Subtract"],
-          "loft": ["Points", "Rows", "Caps", "Profiles (in order)"]}
+          "loft": ["Points", "Rows", "Caps", "Profiles (in order)"],
+          "field": ["Blend", "Opacity", "Falloff", "R"]}
 for k, o in objs.items():
     try:
         log = draw(ui.MB_PT_main, o)

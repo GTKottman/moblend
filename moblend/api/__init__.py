@@ -14,6 +14,7 @@ from .deformer import add_deformer, attach_deformer  # noqa: F401
 from .generator import (add_boole, add_extrude, add_fracture, add_lathe, add_subdivision,  # noqa: F401
                         add_symmetry, add_tracer, add_volume_objects, create_motext, create_sweep,
                         create_volume_builder)
+from .field import add_field, field_users, fields_of, link_field, unlink_field  # noqa: F401
 from .loft import create_loft, set_loft_profiles, sort_along_spread  # noqa: F401
 from .voronoi import SETTINGS as VORONOI_SETTINGS, voronoi_fracture  # noqa: F401
 from .scene import delete, evaluated_stats, list_mograph  # noqa: F401

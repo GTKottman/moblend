@@ -13,7 +13,7 @@ import bpy
 from ..catalog import KEY_GROUP, KEY_TYPE, PARAMS_NODE, Kind
 from .objects import get_object, mb_kind, mb_modifiers, norm, vec3
 
-_SKIP = {"Geometry", "Instances", "Transform"}  # wired internally, never user-facing
+_SKIP = {"Geometry", "Instances", "Transform", "Layers", "Previous", "First"}  # wired internally, never user-facing
 _KIND = {"NodeSocketFloat": "FLOAT", "NodeSocketInt": "INT", "NodeSocketBool": "BOOL",
          "NodeSocketVector": "VECTOR", "NodeSocketColor": "COLOR", "NodeSocketString": "STRING",
          "NodeSocketObject": "OBJECT", "NodeSocketCollection": "COLLECTION", "NodeSocketMaterial": "MATERIAL",
@@ -168,7 +168,7 @@ def list_params(ref, modifier=None):
     """All editable parameters of a MoBlend object, primary modifier first. O(P)."""
     o = get_object(ref)
     k = mb_kind(o)
-    if k in (Kind.EFFECTOR, Kind.DEFORMER, Kind.LOFT):  # parameters live on the wrapper's Params node
+    if k in (Kind.EFFECTOR, Kind.DEFORMER, Kind.LOFT, Kind.FIELD):  # parameters live on the wrapper's Params node
         return _node_params(o[KEY_GROUP].nodes[PARAMS_NODE])
     if k == Kind.SIMPLE_DEFORMER:
         return [Param(key, o, f'["{key}"]', "FLOAT", "ANGLE" if key == "Angle" else None)

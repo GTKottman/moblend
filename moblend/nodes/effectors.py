@@ -35,7 +35,7 @@ def _apply(b, g, geo, weight, position=None, rotation=None, scale=None, color=No
 
 
 def _effector(name, extra, body, falloff="Infinite", menus=None, params=True):
-    return falloff_group(name, "Instances", (PARAMS if params else []) + extra, body, falloff, menus)
+    return falloff_group(name, "Instances", (PARAMS if params else []) + extra, body, falloff, menus, selection=True)
 
 
 def _plain(b, g, w):
