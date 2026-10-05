@@ -26,13 +26,12 @@ from mathutils import Matrix, Vector, noise
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
-from ..catalog import KEY_KIND, KEY_SOURCE, Kind
+from ..catalog import INSIDE_MATERIAL, KEY_KIND, KEY_SOURCE, Kind
 from .generator import MOD_NAMES, add_fracture
 from .material import solid_material
 from .objects import get_object
 from .params import PARAM_SOURCES, rna_params, set_params
 
-INSIDE_MATERIAL = "MB Fracture Inside"
 SEED_ATTEMPTS_PER_PIECE = 200
 DEBOUNCE = 0.2  # seconds of quiet before an automatic re-fracture
 KEY_STATE = "mb_voronoi_state"  # hash of everything the last fracture depended on

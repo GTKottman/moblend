@@ -157,7 +157,7 @@ def falloff_group(name, geo_name, extra, body, falloff_default="Sphere", menus=N
 
 TEXTURES = ("Noise", "Voronoi", "Wave", "Gradient", "Checker", "Magic", "Image")
 TEXTURE_INPUTS = [S("Texture", "MENU", desc="Procedural texture, or Image"), S("Image", "IMAGE"),
-                  S("Scale", "FLOAT", 1.0), S("Detail", "FLOAT", 2.0, 0.0, 15.0),
+                  S("Texture Scale", "FLOAT", 1.0), S("Detail", "FLOAT", 2.0, 0.0, 15.0),
                   S("Speed", "FLOAT", 0.0, desc="Animate the texture over time"),
                   S("Contrast", "FLOAT", 0.0, 0.0, 0.99, "FACTOR")]
 
@@ -165,7 +165,7 @@ TEXTURE_INPUTS = [S("Texture", "MENU", desc="Procedural texture, or Image"), S("
 def texture(b, g, local):
     """(value 0..1, color) of the chosen texture at `local` (an object-local position; images map local
     X/Y -1..1 to the whole image). Uses the TEXTURE_INPUTS of `g`."""
-    vec = b.vmath("SCALE", local, scale=g["Scale"])
+    vec = b.vmath("SCALE", local, scale=g["Texture Scale"])
     w = b.math("MULTIPLY", b.seconds(), g["Speed"])
     lx, ly, _ = b.separate(local)
     image = b.node("GeometryNodeImageTexture", {"Image": g["Image"], "Vector": b.vmath(

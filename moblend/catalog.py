@@ -67,7 +67,9 @@ CLONER_MOD = "MB Cloner"
 PARAMS_NODE = "Params"            # node inside a wrapper whose inputs are the parameters
 
 COLOR_ATTR = "mb_color"           # per-clone color written by effectors
+TRANSFORM_ATTR = "mb_transform"   # a clone's real transform, kept when the viewport shows it as a box
 COLOR_MATERIAL = "MB MoGraph Color"
+INSIDE_MATERIAL = "MB Fracture Inside"  # Voronoi cut faces
 SOURCES_COLLECTION = "MoBlend Sources"
 
 

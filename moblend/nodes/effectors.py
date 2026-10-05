@@ -170,7 +170,7 @@ def _inheritance(b, g, w):
                       data_type=dtype, domain="INSTANCE").outputs[0]
 
     t, r, s = b.instance_trs()
-    tt, tr, ts = b.split_transform(from_source(b.inp("GeometryNodeInstanceTransform"), "FLOAT4X4"))
+    tt, tr, ts = b.split_transform(from_source(b.true_transform(), "FLOAT4X4"))
     m = b.combine_transform(b.mix("VECTOR", w, t, tt), b.mix("ROTATION", w, r, tr), b.mix("VECTOR", w, s, ts))
     geo = b.node("GeometryNodeSetInstanceTransform", {"Instances": g["Instances"], "Transform": m}).outputs[0]
     color = b.mix("RGBA", b.math("MULTIPLY", w, g["Inherit Color"]), b.named(COLOR_ATTR, "FLOAT_COLOR"),

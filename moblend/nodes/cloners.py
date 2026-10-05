@@ -219,7 +219,7 @@ def _object(b, g):
         "Density": b.math("DIVIDE", count, b.at_least(b.math("MULTIPLY", b.math("MULTIPLY", bx, by), bz), 1e-6))})
     volume = b.store(volume.outputs[0], "mb_n", (0, 0, 1), "FLOAT_VECTOR", "POINT")
     axis = b.store(_points(b, 1, out(info, "Location")), "mb_n", (0, 0, 1), "FLOAT_VECTOR", "POINT")
-    _, inst_rot, inst_scale = b.instance_trs()
+    _, inst_rot, inst_scale = b.split_transform(b.true_transform())
     tagged = b.node("GeometryNodeStoreNamedAttribute", {"Geometry": raw, "Name": "mb_r", "Value": inst_rot},
                     data_type="QUATERNION", domain="INSTANCE").outputs[0]
     tagged = b.store(tagged, "mb_v", inst_scale, "FLOAT_VECTOR", "INSTANCE")

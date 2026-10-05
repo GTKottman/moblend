@@ -2,7 +2,7 @@
 
 import math
 
-from ..catalog import COLOR_ATTR
+from ..catalog import COLOR_ATTR, TRANSFORM_ATTR
 from .util import S, geometry_group, geometry_socket, out, socket_by_id
 from .core import init_color, split_centered
 
@@ -233,6 +233,7 @@ def _display(b, g):
     _, rot, scale = b.instance_trs()
     box = b.vmath("MULTIPLY", b.vmath("SUBTRACT", out(bounds, "Max"), out(bounds, "Min")), scale)
     tagged = b.store(b.store(geo, "mb_box", box, "FLOAT_VECTOR", "INSTANCE"), "mb_rot", rot, "QUATERNION", "INSTANCE")
+    tagged = b.store(tagged, TRANSFORM_ATTR, b.inp("GeometryNodeInstanceTransform"), "FLOAT4X4", "INSTANCE")
     pts = b.node("GeometryNodeInstancesToPoints", {"Instances": tagged}).outputs[0]
     boxes = b.node("GeometryNodeInstanceOnPoints", {
         "Points": pts, "Instance": b.node("GeometryNodeMeshCube", {"Size": (1, 1, 1)}).outputs[0],
@@ -378,6 +379,7 @@ def _spline_mask(b, g):
     top = b.node("GeometryNodeDeleteGeometry", {"Geometry": out(cut, "Mesh"),
                                                 "Selection": b.math("LESS_THAN", nz, 0.99)}, domain="FACE").outputs[0]
     fill = b.node("GeometryNodeTransform", {"Geometry": top, "Translation": (0, 0, -0.001)}).outputs[0]
+    fill = b.node("GeometryNodeSetMaterial", {"Geometry": fill, "Material": g["Material"]}).outputs[0]
     border = b.math("LESS_THAN", out(b.node("GeometryNodeInputMeshEdgeNeighbors"), "Face Count"), 1.5)
     outline = b.node("GeometryNodeMeshToCurve", {"Mesh": fill, "Selection": border}).outputs[0]
     return b.index_switch("GEOMETRY", b.menu(["Curve", "Fill"], g["Output"]), [outline, fill])
@@ -458,6 +460,7 @@ BUILDERS = {
         S("Collection", "COLLECTION", desc="Closed curves in the XY plane"),
         S("Mode", "MENU", desc="Union, Intersection, or Subtract (first by name minus the rest)"),
         S("Output", "MENU", desc="Curves, or a filled mesh"),
+        S("Material", "MATERIAL"),
     ], _spline_mask, {"Mode": "Union", "Output": "Curve"}),
     "display": geometry_group("MB Display", [
         S("Viewport", "MENU", desc="Viewport only: Object, Bounding Box, Points or Off (renders always show clones)"),

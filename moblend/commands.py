@@ -253,7 +253,8 @@ def frame_camera(direction=(1.0, -1.4, 0.8), lens=50.0):
     center, radius = _scene_bounds()
     fov = 2 * math.atan(cam.data.sensor_width / (2 * lens))
     aspect = sc.render.resolution_x / sc.render.resolution_y
-    narrow_fov = fov if aspect >= 1 else 2 * math.atan(math.tan(fov / 2) * aspect)
+    # The sensor spans the wider side, so the narrower field of view is the other one.
+    narrow_fov = 2 * math.atan(math.tan(fov / 2) / max(aspect, 1 / aspect))
     dist = radius / math.sin(narrow_fov / 2) * 1.05
     d = Vector(direction).normalized()
     cam.location = center + d * dist

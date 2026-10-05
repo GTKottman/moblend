@@ -8,10 +8,10 @@ from collections import deque
 
 import bpy
 
-from ..catalog import KEY_VERSION
+from ..catalog import KEY_VERSION, TRANSFORM_ATTR
 
 # Bump when any group's nodes or interface change; stale groups are rebuilt in place.
-GROUP_VERSION = 34
+GROUP_VERSION = 37
 
 _SOCKET_TYPES = {
     "GEOMETRY": "NodeSocketGeometry", "FLOAT": "NodeSocketFloat", "INT": "NodeSocketInt",
@@ -196,6 +196,13 @@ class B:
     def instance_trs(self):
         """(translation, rotation, scale) fields of the current instance."""
         return self.split_transform(self.inp("GeometryNodeInstanceTransform"))
+
+    def true_transform(self):
+        """Instance transform field of another object's clones. The viewport Bounding Box display scales its
+        boxes to the clones' size and stores the real transform in TRANSFORM_ATTR; prefer that."""
+        n = self.node("GeometryNodeInputNamedAttribute", {"Name": TRANSFORM_ATTR}, data_type="FLOAT4X4")
+        return self.switch("MATRIX", out(n, "Exists"), self.inp("GeometryNodeInstanceTransform"),
+                           out(n, "Attribute"))
 
     def combine_transform(self, t=None, r=None, s=None):
         return self.node("FunctionNodeCombineTransform", {"Translation": t, "Rotation": r, "Scale": s}).outputs[0]

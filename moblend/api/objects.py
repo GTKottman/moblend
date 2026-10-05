@@ -28,6 +28,16 @@ def mb_kind(o):
     return o.get(KEY_KIND, "")
 
 
+def world_location(o):
+    """World position of `o`, also right just after an operator or a script moved it.
+
+    matrix_world is only refreshed by a depsgraph update, so it reads the identity right after
+    primitive_*_add or a location change. Updates the view layer first: O(changed objects).
+    """
+    bpy.context.view_layer.update()
+    return o.matrix_world.translation.copy()
+
+
 def norm(s):
     """Name key that ignores case, spaces and punctuation: 'Count X' == 'count_x'."""
     return "".join(ch for ch in str(s).lower() if ch.isalnum())

@@ -2,7 +2,7 @@
 
 import bpy
 
-from ..catalog import COLOR_ATTR, COLOR_MATERIAL, KEY_CLONES, Kind
+from ..catalog import COLOR_ATTR, COLOR_MATERIAL, INSIDE_MATERIAL, KEY_CLONES, Kind
 from .objects import choice, get_objects, mb_kind
 from .params import list_params, parse_color, set_params
 
@@ -43,7 +43,9 @@ def solid_material(color, metallic=0.0, roughness=0.4, emission=0.0, name=None):
 
 def assign(objects, mat):
     """Assign `mat` to objects. A cloner means its clones; a generator with a Material input (MoText,
-    Sweep, Volume Builder, Tracer) gets it there, because that input overrides the mesh's slots. O(objects)."""
+    Sweep, Volume Builder, Tracer, Spline Mask) gets it there, because that input overrides the mesh's slots.
+    Mesh slots are replaced in place (clearing them would reset every face's material index), except the
+    Voronoi cut-face slot, which keeps its own material. O(objects x slots)."""
     done = []
     for o in get_objects(objects):
         if mb_kind(o) == Kind.CLONER:
@@ -52,8 +54,12 @@ def assign(objects, mat):
         if any(p.name == "Material" for p in list_params(o)):
             set_params(o, {"Material": mat.name})
         elif getattr(o.data, "materials", None) is not None:
-            o.data.materials.clear()
-            o.data.materials.append(mat)
+            slots = o.data.materials
+            for i, old in enumerate(slots):
+                if old is None or old.name != INSIDE_MATERIAL:
+                    slots[i] = mat
+            if mat.name not in slots:
+                slots.append(mat)
         else:
             continue
         done.append(o.name)

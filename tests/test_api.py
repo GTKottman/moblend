@@ -68,6 +68,9 @@ def catalog_matches_builders_and_all_groups_build():
     groups = nodes.build_all()
     bad = [(g.name, link.from_socket.name) for g in groups for link in g.links if not link.is_valid]
     assert not bad, bad
+    for g in groups:  # a duplicate input name would make set_params ambiguous
+        names = [i.name for i in g.interface.items_tree if i.item_type == "SOCKET" and i.in_out == "INPUT"]
+        assert len(names) == len(set(names)), (g.name, sorted({n for n in names if names.count(n) > 1}))
 
 
 @case
@@ -176,6 +179,7 @@ def object_mode_distributions():
     api.set_params(c, {"Distribution": "Instances", "Object": matrix.name, "Selection": ""})
     m = instances(c)
     assert len(m) == 3 and abs(m[1].to_euler().z - math.radians(30)) < 1e-3  # takes the matrix's rotations
+    assert near(m[0].to_scale(), (1, 1, 1)), m[0].to_scale()  # not the small viewport marker's size
 
 
 @case
@@ -352,6 +356,8 @@ def inheritance_effector_morphs_to_source():
     api.set_params(e, {"Strength": 0.5})
     pts = sorted((x.translation for x in instances(a)), key=lambda v: v.z)
     assert all(near(p, (i, 0, 1.5 * i)) for i, p in enumerate(pts)), pts
+    api.set_params(e, {"Strength": 1.0, "Source": api.create_matrix("linear", params={"Count": 4}).name})
+    assert all(near(x.to_scale(), (1, 1, 1)) for x in instances(a))  # not the Matrix's box display size
 
 
 def _tone(freq, seconds=3, rate=44100):
@@ -493,7 +499,7 @@ def formula_spline_volume_and_shader_effectors():
                                                     "Local Space": False})
     assert _heights(c3) == [1.0, 1.0, 1.0, 0, 0, 0], _heights(c3)
     c4 = _line(4)
-    api.add_effector("shader", cloners=[c4], params={"Texture": "Checker", "Scale": 1.5, "Position": [0, 0, 1],
+    api.add_effector("shader", cloners=[c4], params={"Texture": "Checker", "Texture Scale": 1.5, "Position": [0, 0, 1],
                                                     "Local Space": False}, falloff="Infinite", size=1,
                      location=(0, 0.25, 0.25))  # cells: floor(1.5 x) = 0, 1, 3, 4
     assert len(set(_heights(c4))) == 2, _heights(c4)  # checker: alternating on / off
@@ -629,6 +635,10 @@ def voronoi_fracture_conserves_volume_and_refractures():
     assert len(instances(cube)) == 20, len(instances(cube))  # one effectable piece per cell
     assert abs(_volume(cube) - 8.0) < 0.01, _volume(cube)  # cells tile the cube exactly
     assert "MB Fracture Inside" in [m.name for m in cube.data.materials if m]
+    inside = sum(1 for f in cube.data.polygons if f.material_index == 1)
+    api.assign_material([cube], api.solid_material("#ff5a1f"))  # paints the outside, keeps the cut faces
+    assert [m.name for m in cube.data.materials][1] == "MB Fracture Inside"
+    assert inside and sum(1 for f in cube.data.polygons if f.material_index == 1) == inside
     api.voronoi_fracture(cube, pieces=7, seed=1, offset=0.05)  # re-fracture from the original
     assert len(instances(cube)) == 7
     assert 4.0 < _volume(cube) < 7.9, _volume(cube)
@@ -835,6 +845,17 @@ def deformers():
 
 
 @case
+def new_objects_land_on_a_just_moved_target():
+    bpy.ops.mesh.primitive_cube_add(location=(3, -2, 1))  # matrix_world is stale until a depsgraph update
+    cube = bpy.context.object
+    d = api.add_deformer("twist", targets=[cube])
+    assert near(d.location, (3, -2, 1)), d.location[:]
+    bpy.ops.mesh.primitive_cube_add(location=(-4, 0, 2))
+    c = api.create_cloner("linear", objects=[bpy.context.object])
+    assert near(c.location, (-4, 0, 2)), c.location[:]
+
+
+@case
 def keyframes_and_angles():
     c = api.create_cloner("radial", location=(0, 0, 0))
     api.set_params(c, {"End Angle": 180}, frame=1)
@@ -912,6 +933,9 @@ def spline_mask_and_spline_wrap():
     api.set_params(mask, {"Mode": "Subtract"})
     diff = _area(mask)
     assert 4.0 < union < 5.2 and 1.0 < inter < 1.4 and abs(union - inter - 2 * diff) < 0.1, (union, inter, diff)
+    mat = api.solid_material("#8b6cf6")
+    api.assign_material([mask], mat)  # built from scratch, so it needs the Material input, not mesh slots
+    assert [m.name for m in mask.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.materials] == [mat.name]
     api.set_params(mask, {"Output": "Curve"})
     assert _evaluated(mask).curves is not None
     bpy.ops.mesh.primitive_cylinder_add(radius=0.1, depth=4, rotation=(0, math.pi / 2, 0))

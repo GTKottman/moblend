@@ -7,7 +7,7 @@ from ..catalog import (DEFORMER_GROUP_PREFIX, DEFORMER_MOD_PREFIX, DEFORMER_TYPE
 from ..nodes import deformers
 from .generator import LAST
 from .objects import (add_nodes_modifier, choice, get_object, get_objects, keep_last, make_wrapper, mb_kind,
-                      new_empty, select_only, tag)
+                      new_empty, select_only, tag, world_location)
 from .params import set_params
 
 # Simple deformer types -> (custom property, default, UI options).
@@ -23,7 +23,7 @@ def add_deformer(deformer_type="bend", targets=None, name=None, params=None, loc
     t = choice(deformer_type, DEFORMER_TYPES, "deformer type")
     tgts = get_objects(targets)
     if location is None and tgts:
-        location = tgts[0].matrix_world.translation.copy()
+        location = world_location(tgts[0])
     simple = t in SIMPLE_DEFORMERS
     d = new_empty(name or t.title(), "ARROWS" if simple else "PLAIN_AXES", size, location)
     tag(d, **{KEY_TYPE: t, KEY_KIND: Kind.SIMPLE_DEFORMER if simple else Kind.DEFORMER})

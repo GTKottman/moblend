@@ -130,9 +130,9 @@ TOOLS = [
          "(Sphere, Box, Cylinder, Cone, Capsule, Torus, Linear, Radial, Noise, Random; sized by the object's "
          "scale), Solid, Group (holds its own field list), Time (Speed, Offset, Mode Loop/Ping-Pong/Clamp), Step "
          "(index ramp), Object (distance to an object/curve: Object, Mode, Distance), Shader (Texture "
-         "Noise/Voronoi/Wave/Gradient/Checker/Magic/Image, Scale, Detail, Speed, Contrast), Sound, Formula (x y z "
-         "id count t f). Every field: Blend (Normal, Multiply, Max, Min, Add, Subtract, Screen, Average, "
-         "Difference), Opacity, Invert, Contour (None/Quadratic/Ease/Step/Quantize + Steps), Remap Min/Max. "
+         "Noise/Voronoi/Wave/Gradient/Checker/Magic/Image, Texture Scale, Detail, Speed, Contrast), Sound, "
+         "Formula (x y z id count t f). Every field: Blend (Normal, Multiply, Max, Min, Add, Subtract, Screen, "
+         "Average, Difference), Opacity, Invert, Contour (None/Quadratic/Ease/Step/Quantize + Steps), Remap Min/Max. "
          "The owner's own falloff switches to Infinite on its first field.",
          {"kind": enum(C.FIELD_KINDS), "effectors": names("Owners to add it to"), "params": PARAMS,
           "location": VEC, "size": NUM, "blend": enum(C.FIELD_BLENDS), "name": STR,

@@ -2,13 +2,14 @@
 
 import bmesh
 import bpy
+from mathutils import Matrix
 
 from ..catalog import CLONER_MOD, CLONER_MODES, KEY_CLONES, KEY_KIND, KEY_TYPE, Kind
 from ..nodes import cloners, generators
 from .generator import MOD_NAMES
 from .material import mograph_material
 from .objects import (add_nodes_modifier, choice, get_object, get_objects, move_to_collection, new_mesh_object,
-                      select_only, sources_root, tag)
+                      select_only, sources_root, tag, world_location)
 from .params import list_params, set_params
 
 _KEEP_ON_MODE_SWITCH = ("Collection", "Order", "Seed", "Count")
@@ -30,7 +31,7 @@ def create_cloner(mode="linear", objects=None, name=None, params=None, location=
     mode = choice(mode, CLONER_MODES, "mode")
     srcs = get_objects(objects)
     if location is None and srcs:
-        location = srcs[0].matrix_world.translation.copy()
+        location = world_location(srcs[0])
     c = tag(new_mesh_object(name or "Cloner", location), **{KEY_KIND: Kind.CLONER, KEY_TYPE: mode})
     coll = bpy.data.collections.new(f"{c.name} Clones")
     sources_root().children.link(coll)
@@ -67,5 +68,8 @@ def create_matrix(mode="grid", name=None, params=None, location=None):
     renders). Effectors work on it, and Object-mode cloners can clone onto it (Distribution: Instances)."""
     from .selection import make_matrix  # local: selection imports effector lazily too
     c = create_cloner(mode, name=name or "Matrix", params=params, location=location)
-    c[KEY_CLONES].objects[0].scale = (0.2, 0.2, 0.2)
+    marker = c[KEY_CLONES].objects[0]
+    # Shrink the mesh, not the object: clones keep their child's scale, and Inheritance / Instances
+    # distribution would copy it. A Matrix's elements have scale 1, like C4D's.
+    marker.data.transform(Matrix.Diagonal((0.2, 0.2, 0.2, 1.0)))
     return make_matrix(c)

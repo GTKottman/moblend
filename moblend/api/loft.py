@@ -75,6 +75,7 @@ def set_loft_profiles(ref, profiles):
 def sort_along_spread(objects):
     """Order objects along the axis where their positions spread most (for unordered selections). O(n log n)."""
     objs = get_objects(objects)
+    bpy.context.view_layer.update()  # fresh matrix_world for just-moved objects (see objects.world_location)
     locs = [x.matrix_world.translation for x in objs]
     axis = max(range(3), key=lambda a: max(v[a] for v in locs) - min(v[a] for v in locs))
     return sorted(objs, key=lambda x: x.matrix_world.translation[axis])
