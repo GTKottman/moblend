@@ -65,13 +65,44 @@ def _fracture(b, g):
                                       "Group": island}).outputs[0]
 
 
+def _trails(b, g, clone_points):
+    """Simulation zone keeping each clone's last `Length` positions as points (mb_id, mb_age).
+
+    O(clones x Length) per frame; needs playback from the start frame like any simulation.
+    """
+    sim_in, sim_out = b.node("GeometryNodeSimulationInput"), b.node("GeometryNodeSimulationOutput")
+    sim_in.pair_with_output(sim_out)
+    history = sim_in.outputs[1]  # Geometry (index 0 is Delta Time)
+    # World Space: store world positions so moving/rotating the object itself leaves trails too.
+    world = b.node("GeometryNodeObjectInfo", {"Object": b.inp("GeometryNodeSelfObject")}, transform_space="ORIGINAL")
+    to_world = b.switch("MATRIX", g["World Space"], b.node("FunctionNodeCombineTransform").outputs[0],
+                        out(world, "Transform"))
+    aged = b.store(history, "mb_age", b.math("ADD", b.named("mb_age", "INT"), 1.0), "INT", "POINT")
+    expired = b.math("GREATER_THAN", b.named("mb_age", "INT"), b.math("SUBTRACT", g["Length"], 1.0))
+    aged = b.node("GeometryNodeDeleteGeometry", {"Geometry": aged, "Selection": expired}, domain="POINT").outputs[0]
+    fresh = b.node("GeometryNodeSetPosition", {"Geometry": clone_points,
+                                               "Position": b.transform_point(b.position(), to_world)}).outputs[0]
+    fresh = b.store(fresh, "mb_id", b.index(), "INT", "POINT")
+    fresh = b.store(fresh, "mb_age", 0, "INT", "POINT")
+    b.link(b.join(aged, fresh), sim_out.inputs["Geometry"])
+    local = b.node("GeometryNodeSetPosition", {"Geometry": sim_out.outputs[0],
+                                               "Position": b.to_local(b.position(), to_world)}).outputs[0]
+    return b.node("GeometryNodePointsToCurves", {"Points": local,
+                                                 "Curve Group ID": b.named("mb_id", "INT"),
+                                                 "Weight": b.named("mb_age", "INT")}).outputs[0]
+
+
 def _tracer(b, g):
     pts = b.node("GeometryNodeInstancesToPoints", {"Instances": g["Geometry"]}).outputs[0]
-    crv = b.node("GeometryNodePointsToCurves", {"Points": pts}).outputs[0]
-    crv = b.node("GeometryNodeSetSplineCyclic", {"Geometry": crv, "Cyclic": g["Closed"]}).outputs[0]
+    connect = b.node("GeometryNodePointsToCurves", {"Points": pts}).outputs[0]
+    connect = b.node("GeometryNodeSetSplineCyclic", {"Geometry": connect, "Cyclic": g["Closed"]}).outputs[0]
+    crv = b.index_switch("GEOMETRY", b.menu(["Connect", "Trails"], g["Mode"]), [connect, _trails(b, g, pts)])
     profile = b.node("GeometryNodeCurvePrimitiveCircle", {"Resolution": g["Sides"], "Radius": g["Radius"]},
                      mode="RADIUS").outputs[0]
-    tube = b.node("GeometryNodeCurveToMesh", {"Curve": crv, "Profile Curve": profile}).outputs[0]
+    # Trails thin out with age (Connect points have no age, so they keep full size).
+    age = b.math("DIVIDE", b.named("mb_age", "INT"), b.at_least(g["Length"]))
+    taper = b.math("SUBTRACT", 1.0, b.math("MULTIPLY", age, g["Taper"]))
+    tube = b.node("GeometryNodeCurveToMesh", {"Curve": crv, "Profile Curve": profile, "Scale": taper}).outputs[0]
     tube = b.node("GeometryNodeSetMaterial", {"Geometry": tube, "Material": g["Material"]}).outputs[0]
     return b.join(b.switch("GEOMETRY", g["Keep Clones"], None, g["Geometry"]), tube)
 
@@ -208,10 +239,14 @@ BUILDERS = {
         S("Material", "MATERIAL"),
     ], _loft),
     "tracer": geometry_group("MB Tracer", [
+        S("Mode", "MENU", desc="Connect: a tube through the clones. Trails: each clone leaves a trail over time"),
         S("Radius", "FLOAT", 0.04, 0.0, subtype="DISTANCE"),
         S("Sides", "INT", 8, 3, 128),
-        S("Closed", "BOOL", False),
+        S("Closed", "BOOL", False, desc="Connect mode: close the loop"),
+        S("Length", "INT", 24, 1, 10000, desc="Trails mode: frames a trail lasts"),
+        S("Taper", "FLOAT", 1.0, 0.0, 1.0, "FACTOR", "Trails mode: how much old trail thins out"),
+        S("World Space", "BOOL", True, desc="Trails mode: also trace the object's own movement"),
         S("Keep Clones", "BOOL", True),
         S("Material", "MATERIAL"),
-    ], _tracer),
+    ], _tracer, {"Mode": "Connect"}),
 }

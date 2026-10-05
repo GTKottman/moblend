@@ -429,6 +429,33 @@ def tracer_adds_tube():
 
 
 @case
+def tracer_trails_follow_clones_over_time():
+    sc = bpy.context.scene
+    sc.frame_set(1)
+    c = api.create_cloner("linear", params={"Count": 2, "Offset": [0, 3, 0]}, location=(0, 0, 0))
+    api.add_effector("time", cloners=[c.name], params={"Position": [6, 0, 0], "Local Space": False})
+    api.add_tracer(c.name, {"Mode": "Trails", "Length": 5, "Sides": 8, "World Space": False})
+    for f in range(1, 11):
+        sc.frame_set(f)
+    ev = c.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    geo = ev.evaluated_geometry()
+    assert len(geo.mesh.vertices) == 2 * 5 * 8, len(geo.mesh.vertices)  # 2 clones x 5 kept frames x 8 sides
+    xs = [v.co.x for v in geo.mesh.vertices]
+    assert max(xs) - min(xs) > 0.5  # the trail stretches back along the motion
+    # World space: moving the object itself (no effector motion) also leaves a trail.
+    api.set_params(c, {"MB Tracer/Length": 30, "MB Tracer/World Space": True})
+    c.location = (0, 0, 0)
+    c.keyframe_insert("location", frame=1)
+    c.location = (0, 0, 9)
+    c.keyframe_insert("location", frame=10)
+    for f in range(1, 11):
+        sc.frame_set(f)
+    geo = c.evaluated_get(bpy.context.evaluated_depsgraph_get()).evaluated_geometry()
+    zs = [v.co.z for v in geo.mesh.vertices]  # local space: older points sit below the object
+    assert max(zs) - min(zs) > 5, (min(zs), max(zs))
+
+
+@case
 def deformers():
     bpy.ops.mesh.primitive_cylinder_add(vertices=16, depth=4, location=(0, 0, 0))
     cyl = bpy.context.object

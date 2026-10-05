@@ -137,7 +137,8 @@ TOOLS = [
          "Add a generator to an object: fracture (mode Islands|Polygons: pieces become effectable), voronoi "
          "(pieces, seed, gap 0..0.9: convex Voronoi chunks, inner faces get an Inside material; call again to "
          "re-fracture from the original), "
-         "tracer (tube through a cloner's clones; then set_params 'MB Tracer/Radius'), lathe (angle, steps, "
+         "tracer (options: params with Mode Connect = tube through the clones, or Trails = each clone leaves a "
+         "tapering trail of Length frames; Radius, Sides, Taper), lathe (angle, steps, "
          "axis), extrude (depth), symmetry (axis), boole (cutter, operation DIFFERENCE/UNION/INTERSECT), "
          "subdivision (levels).",
          {"kind": enum(C.GENERATOR_KINDS), "object": OBJ,
