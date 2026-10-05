@@ -75,6 +75,17 @@ def effector_reorder_stays_below_cloner():
 
 
 @case
+def versions_agree():
+    import tomllib
+    import moblend
+    from moblend import catalog
+    root = os.path.dirname(moblend.__file__)
+    with open(os.path.join(root, "blender_manifest.toml"), "rb") as fh:
+        manifest = tomllib.load(fh)["version"]
+    assert ".".join(map(str, moblend.bl_info["version"])) == manifest == catalog.VERSION
+
+
+@case
 def linear_cloner():
     c = api.create_cloner("linear", params={"Count": 4, "Offset": [2, 0, 0]}, location=(0, 0, 0))
     m = instances(c)

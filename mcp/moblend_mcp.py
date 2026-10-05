@@ -295,7 +295,7 @@ def _reply(mid, result=None, error=None):
 
 def _initialize(params):
     return {"protocolVersion": params.get("protocolVersion", "2025-06-18"), "capabilities": {"tools": {}},
-            "serverInfo": {"name": "moblend", "version": "0.1.0"}, "instructions": INSTRUCTIONS}
+            "serverInfo": {"name": "moblend", "version": C.VERSION}, "instructions": INSTRUCTIONS}
 
 
 def _tools_list(params):

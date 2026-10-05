@@ -46,7 +46,7 @@ add-on works in any file you open.
 | Bend, Twist, Taper, Squash/Stretch | Simple Deform placed by an empty; angle/factor are on the empty |
 | Formula/Wave, Spherify, Shear, Bulge, Displacer | GN deformers that support the same falloff fields |
 
-### Roadmap
+### Roadmap (all shipped in 0.2)
 
 - [x] Voronoi Fracture (`voronoi`: exact convex cells, inner-face material, gap, re-fracture)
 - [x] Inheritance effector

@@ -5,7 +5,7 @@ bridge so AI agents can drive it over MCP."""
 bl_info = {
     "name": "MoBlend",
     "author": "MoBlend contributors",
-    "version": (0, 1, 0),
+    "version": (0, 2, 0),
     "blender": (5, 0, 0),
     "location": "View3D > Add > MoBlend, View3D > Sidebar > MoBlend",
     "description": "MoGraph-style cloners, effectors, fields, MoText, fracture, sweep and deformers + MCP bridge",
