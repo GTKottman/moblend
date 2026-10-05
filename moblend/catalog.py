@@ -13,7 +13,7 @@ FALLOFF_SHAPES = ("Infinite", "Sphere", "Box", "Cylinder", "Linear", "Noise", "R
 SIMPLE_DEFORMERS = {"bend": "BEND", "twist": "TWIST", "taper": "TAPER", "stretch": "STRETCH"}
 GN_DEFORMERS = ("wave", "spherify", "shear", "bulge", "displace")
 DEFORMER_TYPES = tuple(SIMPLE_DEFORMERS) + GN_DEFORMERS
-GENERATOR_KINDS = ("fracture", "tracer", "lathe", "extrude", "symmetry", "boole", "subdivision")
+GENERATOR_KINDS = ("fracture", "voronoi", "tracer", "lathe", "extrude", "symmetry", "boole", "subdivision")
 PRIMITIVES = ("cube", "sphere", "icosphere", "cylinder", "cone", "torus", "plane", "monkey",
               "circle_curve", "bezier_curve", "spiral_curve")
 AXES = ("X", "Y", "Z")
@@ -37,6 +37,7 @@ KEY_GROUP = "mb_group"    # wrapper node group of an effector / GN deformer
 KEY_CLONES = "mb_clones"  # a cloner's source collection
 KEY_AXIS = "mb_axis"      # simple deformer axis
 KEY_VERSION = "mb_version"
+KEY_SOURCE = "mb_source"  # original mesh kept by Voronoi Fracture for re-fracturing
 
 # Node group and modifier names.
 GROUP_PREFIX = "MB "              # shared, generated node groups ("MB Falloff", ...)

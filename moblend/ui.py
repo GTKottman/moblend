@@ -16,13 +16,16 @@ EFFECTOR_ICONS = {"plain": "EMPTY_AXIS", "random": "RNDCURVE", "step": "IPO_CONS
 DEFORMER_ICONS = {"bend": "MOD_SIMPLEDEFORM", "twist": "MOD_SCREW", "taper": "MOD_SIMPLEDEFORM",
                   "stretch": "MOD_SIMPLEDEFORM", "wave": "MOD_WAVE", "spherify": "MESH_UVSPHERE",
                   "shear": "MOD_LATTICE", "bulge": "MOD_CAST", "displace": "MOD_DISPLACE"}
-# (kind, menu label, icon); None draws a separator.
+# (kind, menu label, icon); None draws a separator. Kinds with their own operator are in GENERATOR_OPERATORS.
 GENERATOR_MENU = (("motext", "MoText", "FONT_DATA"), ("sweep", "Sweep (active curve)", "CURVE_PATH"),
-                  ("fracture", "Fracture (active)", "MOD_EXPLODE"), ("tracer", "Tracer (active cloner)", "CURVE_DATA"),
+                  ("fracture", "Fracture (active)", "MOD_EDGESPLIT"),
+                  ("voronoi", "Voronoi Fracture (active)", "MOD_EXPLODE"),
+                  ("tracer", "Tracer (active cloner)", "CURVE_DATA"),
                   None,
                   ("lathe", "Lathe", "MOD_SCREW"), ("extrude", "Extrude", "MOD_SOLIDIFY"),
                   ("symmetry", "Symmetry", "MOD_MIRROR"), ("boole", "Boole (cut active)", "MOD_BOOLEAN"),
                   ("subdivision", "Subdivision", "MOD_SUBSURF"))
+GENERATOR_OPERATORS = {"voronoi": "moblend.voronoi"}
 EFFECTABLE = (Kind.CLONER, Kind.MOTEXT, Kind.FRACTURE)
 OWNERS = (Kind.EFFECTOR, Kind.DEFORMER, Kind.SIMPLE_DEFORMER)
 
@@ -101,7 +104,7 @@ class MB_OT_add_generator(_MBOperator):
     """Add a MoBlend generator"""
     bl_idname = "moblend.add_generator"
     bl_label = "Add Generator"
-    kind: EnumProperty(items=[(g[0], g[1], "") for g in GENERATOR_MENU if g])
+    kind: EnumProperty(items=[(g[0], g[1], "") for g in GENERATOR_MENU if g and g[0] not in GENERATOR_OPERATORS])
 
     def run(self, ctx):
         act = ctx.active_object
@@ -121,6 +124,22 @@ class MB_OT_add_generator(_MBOperator):
                 api.add_boole(act, cutter)
             return True
         return api.GENERATORS[self.kind](act)
+
+
+class MB_OT_voronoi(_MBOperator):
+    """Cut the active mesh into convex Voronoi pieces that effectors can move. Running it again
+    re-fractures from the original mesh"""
+    bl_idname = "moblend.voronoi"
+    bl_label = "Voronoi Fracture"
+    pieces: IntProperty(name="Pieces", default=24, min=1, soft_max=500)
+    seed: IntProperty(name="Seed", default=0)
+    gap: bpy.props.FloatProperty(name="Gap", default=0.0, min=0.0, max=0.9, subtype="FACTOR")
+
+    def run(self, ctx):
+        o = ctx.active_object
+        if not o or o.type != "MESH":
+            return self.fail("Select a mesh first")
+        return api.voronoi_fracture(o, self.pieces, self.seed, self.gap)
 
 
 class MB_OT_cloner_mode(_MBOperator):
@@ -220,6 +239,8 @@ class MB_MT_generators(bpy.types.Menu):
         for entry in GENERATOR_MENU:
             if entry is None:
                 self.layout.separator()
+            elif entry[0] in GENERATOR_OPERATORS:
+                self.layout.operator(GENERATOR_OPERATORS[entry[0]], text=entry[1], icon=entry[2])
             else:
                 kind, label, icon = entry
                 self.layout.operator("moblend.add_generator", text=label, icon=icon).kind = kind
@@ -351,6 +372,13 @@ class MB_PT_main(bpy.types.Panel):
         _draw_users(box, o, "Deforms", "MODIFIER", unlink=False)
 
     def generic(self, layout, o):
+        if api.VORONOI_SETTINGS["pieces"] in o:
+            box = layout.box()
+            box.label(text="Voronoi Fracture", icon="MOD_EXPLODE")
+            for key in api.VORONOI_SETTINGS.values():
+                box.prop(o, f'["{key}"]', text=key.removeprefix("Voronoi "))
+            _op(box, "moblend.voronoi", "FILE_REFRESH", text="Re-fracture",
+                **{arg: o[key] for arg, key in api.VORONOI_SETTINGS.items()})
         self.extra_modifiers(layout, o)
         if _effectable(o):
             self.effector_list(layout, o)
@@ -383,7 +411,8 @@ class MB_Prefs(bpy.types.AddonPreferences):
         self.layout.label(text=f"Socket: {bridge.socket_path()}")
 
 
-CLASSES = (MB_OT_add_cloner, MB_OT_add_effector, MB_OT_add_deformer, MB_OT_add_generator, MB_OT_cloner_mode,
+CLASSES = (MB_OT_add_cloner, MB_OT_add_effector, MB_OT_add_deformer, MB_OT_add_generator, MB_OT_voronoi,
+           MB_OT_cloner_mode,
            MB_OT_link, MB_OT_move_effector, MB_OT_color_material, MB_OT_bridge, MB_OT_rebuild,
            MB_MT_cloners, MB_MT_effectors, MB_MT_deformers, MB_MT_generators, MB_MT_add,
            MB_PT_main, MB_PT_bridge, MB_Prefs)

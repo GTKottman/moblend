@@ -117,7 +117,9 @@ TOOLS = [
          "(animate for growth), Twist, End Scale (taper), Path Resolution, Fill Caps, Material.",
          {"path": OBJ, "profile": OBJ, "name": STR, "params": PARAMS}, ["path"]),
     tool("add_generator",
-         "Add a generator modifier to an object: fracture (mode Islands|Polygons: pieces become effectable), "
+         "Add a generator to an object: fracture (mode Islands|Polygons: pieces become effectable), voronoi "
+         "(pieces, seed, gap 0..0.9: convex Voronoi chunks, inner faces get an Inside material; call again to "
+         "re-fracture from the original), "
          "tracer (tube through a cloner's clones; then set_params 'MB Tracer/Radius'), lathe (angle, steps, "
          "axis), extrude (depth), symmetry (axis), boole (cutter, operation DIFFERENCE/UNION/INTERSECT), "
          "subdivision (levels).",

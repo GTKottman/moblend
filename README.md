@@ -35,6 +35,7 @@ add-on works in any file you open.
 | MoGraph color | Effector **Color** + **Color Mix**. The "MB MoGraph Color" material displays it |
 | MoText (character / word / line) | MoText: upright, extruded, split into pieces effectors can move |
 | Fracture (explode segments) | Fracture: by islands, or every polygon on its own |
+| Voronoi Fracture | Voronoi Fracture: exact convex cells (pieces, seed, gap) with an inside material; re-fracture any time |
 | Sweep (with growth) | Sweep: path + optional profile. Animate Start/End for growth, plus twist and end-scale taper |
 | Tracer (connect) | Tracer: a tube through the clones |
 | Lathe, Extrude, Symmetry, Boole, Subdivision | Wrappers around Screw, Solidify/curve extrude, Mirror, Boolean, Subsurf |
@@ -43,7 +44,7 @@ add-on works in any file you open.
 
 ### Roadmap
 
-- [ ] Voronoi Fracture
+- [x] Voronoi Fracture (`voronoi`: exact convex cells, inner-face material, gap, re-fracture)
 - [ ] Inheritance effector
 - [ ] Sound effector
 - [ ] Volume Builder

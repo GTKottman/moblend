@@ -48,6 +48,11 @@ class Rec:
         pass
 
 
+def _cube():
+    bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0, 6))
+    return bpy.context.object
+
+
 class Ctx:
     def __init__(self, o):
         self.active_object = o
@@ -76,10 +81,12 @@ objs = {
     "deformer": api.add_deformer("wave", name="W", targets=[c.name]),
     "simple": api.add_deformer("bend", name="B"),
     "motext": api.create_motext("HI", name="T"),
+    "voronoi": api.voronoi_fracture(api.get_object(c.name) and _cube(), pieces=4),
 }
 api.add_effector("plain", name="P2", cloners=["T"])
 expect = {"cloner": ["Count X", "Spacing", "Radius", "R"], "effector": ["Strength", "Falloff", "Seed", "Mode"],
-          "deformer": ["Amplitude", "Falloff"], "simple": ["Angle"], "motext": ["Text", "Split", "P2"]}
+          "deformer": ["Amplitude", "Falloff"], "simple": ["Angle"], "motext": ["Text", "Split", "P2"],
+          "voronoi": ["Pieces", "Seed", "Gap", "Mode"]}
 for k, o in objs.items():
     try:
         log = draw(ui.MB_PT_main, o)
@@ -121,6 +128,9 @@ try:
     cl.select_set(True)
     assert bpy.ops.moblend.cloner_mode(mode="grid") == {"FINISHED"}
     assert bpy.ops.moblend.add_generator(kind="motext") == {"FINISHED"}
+    bpy.ops.mesh.primitive_cube_add()
+    assert bpy.ops.moblend.voronoi(pieces=5) == {"FINISHED"}
+    assert bpy.context.active_object["Voronoi Pieces"] == 5
     print("PASS operators")
 except Exception:
     fails.append("operators")

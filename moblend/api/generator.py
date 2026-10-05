@@ -99,7 +99,3 @@ def add_boole(ref, cutter, operation="DIFFERENCE"):
 def add_subdivision(ref, levels=2):
     return _modifier(ref, "MB Subdivision", "SUBSURF", levels=levels, render_levels=levels)
 
-
-# kind -> function(object, **options); used by the UI and the MCP bridge.
-GENERATORS = {"fracture": add_fracture, "tracer": add_tracer, "lathe": add_lathe, "extrude": add_extrude,
-              "symmetry": add_symmetry, "boole": add_boole, "subdivision": add_subdivision}

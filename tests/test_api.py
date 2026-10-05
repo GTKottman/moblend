@@ -278,6 +278,34 @@ def fracture_islands_and_polygons():
     assert len(instances(a)) == 12
 
 
+def _volume(o):
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    v = bm.calc_volume()
+    bm.free()
+    return v
+
+
+@case
+def voronoi_fracture_conserves_volume_and_refractures():
+    bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0, 0))
+    cube = bpy.context.object
+    api.voronoi_fracture(cube, pieces=20, seed=1)
+    assert len(instances(cube)) == 20, len(instances(cube))  # one effectable piece per cell
+    assert abs(_volume(cube) - 8.0) < 0.01, _volume(cube)  # cells tile the cube exactly
+    assert "MB Fracture Inside" in [m.name for m in cube.data.materials if m]
+    api.voronoi_fracture(cube, pieces=7, seed=1, gap=0.2)  # re-fracture from the original, not the pieces
+    assert len(instances(cube)) == 7
+    assert 3.0 < _volume(cube) < 7.9, _volume(cube)
+    assert cube["Voronoi Pieces"] == 7
+    before = [x.translation.z for x in instances(cube)]
+    e = api.add_effector("plain", cloners=[cube.name], falloff="Infinite", params={"Position": [0, 0, 1],
+                                                                                   "Local Space": False})
+    after = [x.translation.z for x in instances(cube)]
+    assert all(abs(a - b - 1.0) < 1e-4 for a, b in zip(after, before, strict=True)) and e
+
+
 @case
 def sweep_grows():
     bpy.ops.curve.primitive_bezier_curve_add()
