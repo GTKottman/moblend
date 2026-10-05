@@ -116,7 +116,7 @@ says what to use instead)
 | Item | Status | Notes |
 |---|---|---|
 | MoGraph Color shader | ✅ | "MB MoGraph Color" material |
-| MoGraph Multi Shader (index, random, weight) | ✅ | |
+| MoGraph Multi Shader (index, random, weight) | ✅ | Works on cloners, MoText letters and fracture pieces |
 | MoGraph Beat Shader | ✅ | Simple-expression driver; no Python auto-run |
 | MoGraph Camera Shader | ➖ | |
 | MoGraph Selection tag + Selection tool | ✅ | Tag: index lists or patterns. Tool: Pick Clones puts a vertex on every clone for Edit Mode selection |

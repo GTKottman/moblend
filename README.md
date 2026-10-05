@@ -5,11 +5,11 @@ MoText, fracture, sweep and deformers. It's built entirely on Geometry Nodes and
 comes with an MCP server, so AI agents can build and animate scenes in your live
 Blender.
 
-![A radial cloner swept by a Plain effector, a Random noise effector and Step-effected MoText](docs/demo.jpg)
+![The MoBlend title in multi-colored bevelled letters in front of a wall of colored cubes](docs/demo.jpg)
 
-*[`examples/demo_scene.py`](examples/demo_scene.py): a radial cloner, a Plain effector
-orbiting the ring (it lifts the clones and paints them orange), a Random effector in noise
-mode, and MoText driven by a Step effector.*
+*[`examples/demo_scene.py`](examples/demo_scene.py): a wall of 1,900 cloned cubes pushed into
+relief by a Noise-mode Random effector and painted by fifteen drifting Plain effectors, bevelled
+MoText with a Multi shader color per letter, and a ring of spheres orbiting it.*
 
 ## Gallery
 

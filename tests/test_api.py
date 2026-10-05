@@ -1011,6 +1011,9 @@ def attribute_field_and_materials():
     name = api.multi_material([c], ["#ff0000", "#00ff00", "#0000ff"], mode="Index")
     mat = bpy.data.materials[name]
     assert any(n.type == "VALTORGB" and len(n.color_ramp.elements) == 3 for n in mat.node_tree.nodes)
+    text = api.create_motext("ABC")  # MoText letters carry a clone index too, so Multi Index works on them
+    geometry = text.evaluated_get(bpy.context.evaluated_depsgraph_get()).evaluated_geometry()
+    assert [round(d.value) for d in geometry.instances_pointcloud().attributes["mb_index"].data] == [0, 1, 2]
     beat = bpy.data.materials[api.beat_material([c], bpm=120)]
     value = next(n for n in beat.node_tree.nodes if n.type == "VALUE")
     fc = beat.node_tree.animation_data.drivers[0]

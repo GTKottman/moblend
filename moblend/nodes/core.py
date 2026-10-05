@@ -22,9 +22,11 @@ FALLOFF_INPUTS = [
 FALLOFF_NAMES = frozenset(s["name"] for s in FALLOFF_INPUTS)
 
 
-def init_color(b, geo):
-    """Every clone starts white so effectors have a color to blend from."""
-    return b.store(geo, COLOR_ATTR, WHITE, "FLOAT_COLOR", "INSTANCE")
+def init_clones(b, geo):
+    """Per-clone data every MoGraph generator provides: a white color for effectors to blend from, and the
+    clone index (the Multi shader's Index mode reads it). O(clones)."""
+    geo = b.store(geo, COLOR_ATTR, WHITE, "FLOAT_COLOR", "INSTANCE")
+    return b.store(geo, "mb_index", b.index(), "FLOAT", "INSTANCE")
 
 
 def falloff():
@@ -369,7 +371,7 @@ def instancer():
             "Rotation": g["Rotation"], "Scale": g["Scale"]}).outputs[0]
         transform = b.combine_transform(b.position(), g["Rotation"], g["Scale"])
         geo = b.index_switch("GEOMETRY", order, [picked, picked, _blend(b, g["Points"], coll, transform), picked])
-        geo = init_color(b, geo)
+        geo = init_clones(b, geo)
         child = b.math("FLOORED_MODULO", pick, b.at_least(b.instance_count(coll)))
         geo = b.store(geo, "mb_child", child, "INT", "INSTANCE")
         # Per-clone data from the cloner's own mesh: vertex i holds clone i's selection / weight tags.
@@ -378,7 +380,6 @@ def instancer():
             value = b.node("GeometryNodeSampleIndex", {"Geometry": g["Data"], "Value": b.named(tag, "FLOAT"),
                                                        "Index": b.index()}, data_type="FLOAT", domain="POINT")
             geo = b.store(geo, attr, value.outputs[0], "FLOAT", "INSTANCE")
-        geo = b.store(geo, "mb_index", b.index(), "FLOAT", "INSTANCE")
         bundle = b.node("NodeCombineBundle")
         bundle.bundle_items.new("GEOMETRY", CHILDREN_ITEM)
         b.link(coll, bundle.inputs[0])
@@ -420,6 +421,6 @@ def split_centered(domain="FACE"):
                         data_type="FLOAT_VECTOR", domain="INSTANCE").outputs[0]
         res = b.node("GeometryNodeTranslateInstances", {"Instances": out(second, "Instances"),
                                                         "Translation": offset, "Local Space": False}).outputs[0]
-        b.link(init_color(b, res), gout.inputs[0])
+        b.link(init_clones(b, res), gout.inputs[0])
         return ng
     return ensure(name, build)

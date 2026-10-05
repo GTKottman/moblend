@@ -4,7 +4,7 @@ import math
 
 from ..catalog import COLOR_ATTR, TRANSFORM_ATTR
 from .util import S, geometry_group, geometry_socket, out, socket_by_id
-from .core import init_color, split_centered
+from .core import init_clones, split_centered
 
 TEXT_PARTS = {"Characters": "mb_char", "Words": "mb_word", "Lines": "mb_line"}
 
@@ -247,7 +247,7 @@ def _fracture_objects(b, g):
     """C4D Fracture 'Off': every object of a collection is one clone, left where it is. O(objects)."""
     inst = b.node("GeometryNodeCollectionInfo", {"Collection": g["Collection"], "Separate Children": True,
                                                  "Reset Children": False}, transform_space="RELATIVE").outputs[0]
-    return init_color(b, inst)
+    return init_clones(b, inst)
 
 
 def _moinstance(b, g):
@@ -276,7 +276,7 @@ def _moinstance(b, g):
     inv = b.node("FunctionNodeInvertMatrix", {"Matrix": world}).outputs["Matrix"]
     local = b.node("FunctionNodeMatrixMultiply", {0: inv, 1: b.named("mb_m", "FLOAT4X4")}).outputs[0]
     inst = b.node("GeometryNodeSetInstanceTransform", {"Instances": inst, "Transform": local}).outputs[0]
-    return init_color(b, inst)
+    return init_clones(b, inst)
 
 
 def _point(b):
