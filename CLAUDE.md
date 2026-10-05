@@ -23,6 +23,10 @@ C4D-style MoGraph add-on for Blender 5.2 + stdio MCP server. Read README.md for 
 - `moblend/commands.py` — bridge commands (`register(name, api_fn, aliases, describe)`), `bridge.py` — Unix
   socket server; `mcp/moblend_mcp.py` — stdio MCP server, schemas from catalog enums.
 - `docs/MOGRAPH_CHECKLIST.md` — Cinema 4D MoGraph feature checklist; keep it in sync with what ships.
+- Gallery: `examples/gallery/scenes.py` (one `@scene` function per feature; `studio.py` = backdrop, lights,
+  camera fit, palette). Render `blender -b --factory-startup -P examples/gallery/render.py -- [names]` (~1 s
+  per scene), then `python3 tools/gallery.py` makes the JPEGs, `docs/GALLERY.md` and the README grid (between
+  the `gallery:start/end` markers). Look at every render before committing.
 - Dev install: symlink `<blender config>/5.x/scripts/addons/moblend` → `moblend/`; MCP:
   `claude mcp add moblend -s user -- python3 <repo>/mcp/moblend_mcp.py`.
 
@@ -45,6 +49,9 @@ C4D-style MoGraph add-on for Blender 5.2 + stdio MCP server. Read README.md for 
   or writing it back is a use-after-free crash. Rebuilding an interface also drops links to its sockets.
 - One menu group input must drive a single Menu Switch (several make the menu's items empty).
 - Extrude Mesh defaults to Individual; use `generators._solid` for closed extrusions.
+- `matrix_world` is stale right after an operator or a location change: use `objects.world_location()`.
+- `mesh.materials.clear()` resets every face's material index; replace slots in place instead.
+- `bpy.ops.object.transform_apply()` applies location too unless told not to.
 - Exact booleans dislike coplanar faces; Mesh Boolean Union/Intersect take every operand on multi-input
   "Mesh 2" (its label changes, the identifier doesn't).
 
