@@ -14,7 +14,8 @@ from .params import set_params
 
 # Modifier name of each node-group generator.
 MOD_NAMES = {"motext": "MB MoText", "sweep": "MB Sweep", "fracture": "MB Fracture", "tracer": "MB Tracer",
-             "volume": "MB Volume Builder", "display": "MB Display"}
+             "volume": "MB Volume Builder", "display": "MB Display", "fracture_objects": "MB Fracture Objects",
+             "moinstance": "MB MoInstance", "mospline": "MB MoSpline", "spline_mask": "MB Spline Mask"}
 LAST = MOD_NAMES["display"]  # always the last modifier: it only swaps what the viewport shows
 
 
@@ -82,6 +83,52 @@ def add_volume_objects(ref, objects, mode="add"):
     move_to_collection(get_objects(objects), coll)
     o.update_tag()
     return {m: [x.name for x in o[k].objects] for m, k in KEY_VOLUME_SETS.items()}
+
+
+def create_fracture_objects(objects, name=None):
+    """C4D Fracture (mode Off): each object becomes one clone, left where it is, for effectors."""
+    o = tag(new_mesh_object(name or "Fracture", (0, 0, 0)), **{KEY_KIND: Kind.FRACTURE})
+    coll = _hidden_collection(f"{o.name} Objects")
+    move_to_collection(get_objects(objects), coll)
+    _add_generator_modifier(o, "fracture_objects")
+    set_params(o, {"Collection": coll.name})
+    select_only(o)
+    return o
+
+
+def create_moinstance(source, name=None, params=None, location=None):
+    """C4D MoInstance: animate this object; `source` is instanced along its recent path (effectable)."""
+    values = {"Object": get_object(source).name, **(params or {})}
+    return _generator_object(name or "MoInstance", Kind.MOINSTANCE, "moinstance", values, location)
+
+
+def create_mospline(mode="Simple", spline=None, name=None, params=None, location=None):
+    """C4D MoSpline (Simple / Spline modes; Turtle: create_mospline_turtle)."""
+    values = {"Mode": mode, **({"Spline": get_object(spline).name} if spline else {}), **(params or {})}
+    return _generator_object(name or "MoSpline", Kind.MOSPLINE, "mospline", values, location)
+
+
+def create_spline_mask(curves, mode="Union", output="Curve", name=None):
+    """C4D Spline Mask: 2D boolean of closed XY curves (Subtract: first by name minus the rest)."""
+    o = tag(new_mesh_object(name or "Spline Mask", (0, 0, 0)), **{KEY_KIND: Kind.MOSPLINE})
+    coll = _hidden_collection(f"{o.name} Curves")
+    move_to_collection(get_objects(curves), coll)
+    _add_generator_modifier(o, "spline_mask")
+    set_params(o, {"Collection": coll.name, "Mode": mode, "Output": output})
+    select_only(o)
+    return o
+
+
+def add_spline_wrap(targets, curve, axis="X"):
+    """C4D Spline Wrap: bend objects along a curve (Blender's Curve modifier, axis = the objects' length)."""
+    c = get_object(curve)
+    axis = choice(axis, ("X", "Y", "Z", "-X", "-Y", "-Z"), "axis")
+    deform_axis = ("NEG_" if axis.startswith("-") else "POS_") + axis[-1]
+    for t in get_objects(targets):
+        m = t.modifiers.new(f"MBD Spline Wrap {c.name}", "CURVE")
+        m.object, m.deform_axis = c, deform_axis
+        keep_last(t, LAST)
+    return c
 
 
 def add_fracture(ref, mode="Islands"):

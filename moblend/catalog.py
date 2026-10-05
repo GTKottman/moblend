@@ -20,7 +20,7 @@ FIELD_BLENDS = ("Normal", "Multiply", "Max", "Min", "Add", "Subtract", "Screen",
 FIELD_KINDS = ("Solid", "Group") + tuple(s for s in FALLOFF_SHAPES if s != "Infinite") + (
     "Time", "Step", "Object", "Shader", "Sound", "Formula")
 SIMPLE_DEFORMERS = {"bend": "BEND", "twist": "TWIST", "taper": "TAPER", "stretch": "STRETCH"}
-GN_DEFORMERS = ("wave", "spherify", "shear", "bulge", "displace")
+GN_DEFORMERS = ("wave", "spherify", "shear", "bulge", "displace", "moextrude")
 DEFORMER_TYPES = tuple(SIMPLE_DEFORMERS) + GN_DEFORMERS
 GENERATOR_KINDS = ("fracture", "voronoi", "tracer", "lathe", "extrude", "symmetry", "boole", "subdivision")
 PRIMITIVES = ("cube", "sphere", "icosphere", "cylinder", "cone", "torus", "plane", "monkey",
@@ -40,6 +40,8 @@ class Kind:
     VOLUME = "volume"
     LOFT = "loft"
     FIELD = "field"
+    MOSPLINE = "mospline"
+    MOINSTANCE = "moinstance"
 
 
 # Custom properties stored on objects.

@@ -3,10 +3,19 @@
 import math
 
 from ..catalog import COLOR_ATTR
-from .util import S, geometry_group, out
-from .core import split_centered
+from .util import S, geometry_group, geometry_socket, out, socket_by_id
+from .core import init_color, split_centered
 
 TEXT_PARTS = {"Characters": "mb_char", "Words": "mb_word", "Lines": "mb_line"}
+
+
+def _solid(b, flat, depth):
+    """Closed solid from a flat mesh pushed `depth` along +Z. Extruding as one region (not per face) moves the
+    faces up and leaves the bottom open, so a flipped copy closes it; welding joins the two. O(faces)."""
+    top = b.node("GeometryNodeExtrudeMesh", {"Mesh": flat, "Offset": (0, 0, 1), "Offset Scale": depth,
+                                             "Individual": False}, mode="FACES").outputs[0]
+    back = b.node("GeometryNodeFlipFaces", {"Mesh": flat}).outputs[0]
+    return b.node("GeometryNodeMergeByDistance", {"Geometry": b.join(back, top), "Distance": 1e-5}).outputs[0]
 
 
 def _motext(b, g):
@@ -20,11 +29,11 @@ def _motext(b, g):
         inst = b.store(inst, attr, value, "INT", "INSTANCE")
     flat = b.node("GeometryNodeRealizeInstances",
                   {"Geometry": b.node("GeometryNodeFillCurve", {"Curve": inst}).outputs[0]}).outputs[0]
-    # Extrusion leaves the original faces open, so close the back with a flipped copy.
-    top = b.node("GeometryNodeExtrudeMesh", {"Mesh": flat, "Offset": (0, 0, 1), "Offset Scale": g["Depth"]},
-                 mode="FACES").outputs[0]
-    back = b.node("GeometryNodeFlipFaces", {"Mesh": flat}).outputs[0]
-    solid = b.node("GeometryNodeMergeByDistance", {"Geometry": b.join(back, top), "Distance": 1e-5}).outputs[0]
+    solid = _solid(b, flat, g["Depth"])
+    sharp = b.math("GREATER_THAN", b.inp("GeometryNodeInputMeshEdgeAngle"), math.radians(30))
+    beveled = b.node("GeometryNodeMeshBevel", {"Mesh": solid, "Selection": sharp, "Offset": g["Bevel"],
+                                               "Segments": g["Bevel Segments"]}).outputs[0]
+    solid = b.switch("GEOMETRY", b.math("GREATER_THAN", g["Bevel"], 0.0), solid, beveled)
     mesh = b.switch("GEOMETRY", b.math("GREATER_THAN", g["Depth"], 0.0), flat, solid)
     mesh = b.node("GeometryNodeTransform", {"Geometry": mesh,
                                             "Translation": b.combine(z=b.math("MULTIPLY", g["Depth"], -0.5))}
@@ -104,8 +113,21 @@ def _trails(b, g, clone_points):
                                                  "Weight": b.named("mb_age", "INT")}).outputs[0]
 
 
+def _points_of(b, geo):
+    """Every point of realized geometry: mesh vertices, curve points and point clouds. O(points)."""
+    parts = b.node("GeometryNodeSeparateComponents", {"Geometry": geo})
+    return b.join(b.node("GeometryNodeMeshToPoints", {"Mesh": out(parts, "Mesh")}, mode="VERTICES").outputs[0],
+                  b.node("GeometryNodeCurveToPoints", {"Curve": out(parts, "Curve")}, mode="EVALUATED").outputs[0],
+                  out(parts, "Point Cloud"))
+
+
 def _tracer(b, g):
-    pts = b.node("GeometryNodeInstancesToPoints", {"Instances": g["Geometry"]}).outputs[0]
+    """Trace this object's clones, or (Trace Object set) another object's points, vertices or particles."""
+    own = b.node("GeometryNodeInstancesToPoints", {"Instances": g["Geometry"]}).outputs[0]
+    other = _points_of(b, b.object_geometry(g["Trace Object"]))
+    count = out(b.node("GeometryNodeAttributeDomainSize", {"Geometry": other}, component="POINTCLOUD"),
+                "Point Count")
+    pts = b.switch("GEOMETRY", b.math("GREATER_THAN", count, 0.0), own, other)
     connect = b.node("GeometryNodePointsToCurves", {"Points": pts}).outputs[0]
     connect = b.node("GeometryNodeSetSplineCyclic", {"Geometry": connect, "Cyclic": g["Closed"]}).outputs[0]
     crv = b.index_switch("GEOMETRY", b.menu(["Connect", "Trails"], g["Mode"]), [connect, _trails(b, g, pts)])
@@ -220,6 +242,147 @@ def _display(b, g):
     return b.switch("GEOMETRY", b.inp("GeometryNodeIsViewport"), geo, shown)
 
 
+def _fracture_objects(b, g):
+    """C4D Fracture 'Off': every object of a collection is one clone, left where it is. O(objects)."""
+    inst = b.node("GeometryNodeCollectionInfo", {"Collection": g["Collection"], "Separate Children": True,
+                                                 "Reset Children": False}, transform_space="RELATIVE").outputs[0]
+    return init_color(b, inst)
+
+
+def _moinstance(b, g):
+    """C4D MoInstance: a trail of instances of Object at this object's recent positions (History Depth frames,
+    one every Step frames). Simulation: O(History Depth) per frame; play from the start frame."""
+    sim_in, sim_out = b.node("GeometryNodeSimulationInput"), b.node("GeometryNodeSimulationOutput")
+    sim_in.pair_with_output(sim_out)
+    history = sim_in.outputs[1]
+    world = out(b.node("GeometryNodeObjectInfo", {"Object": b.inp("GeometryNodeSelfObject")},
+                       transform_space="ORIGINAL"), "Transform")
+    aged = b.store(history, "mb_age", b.math("ADD", b.named("mb_age", "INT"), 1.0), "INT", "POINT")
+    expired = b.math("GREATER_THAN", b.named("mb_age", "INT"),
+                     b.math("SUBTRACT", b.math("MULTIPLY", g["History Depth"], g["Step"]), 1.0))
+    aged = b.node("GeometryNodeDeleteGeometry", {"Geometry": aged, "Selection": expired}, domain="POINT").outputs[0]
+    frame = b.inp("GeometryNodeInputSceneTime", "Frame")
+    due = b.math("LESS_THAN", b.math("FLOORED_MODULO", frame, b.at_least(g["Step"])), 0.5)
+    fresh = b.store(b.store(_point(b), "mb_m", world, "FLOAT4X4", "POINT"), "mb_age", 0, "INT", "POINT")
+    fresh = b.node("GeometryNodeDeleteGeometry", {"Geometry": fresh, "Selection": b.bool_not(due)},
+                   domain="POINT").outputs[0]
+    b.link(b.join(aged, fresh), sim_out.inputs["Geometry"])
+    trail = sim_out.outputs[0]
+    shape = out(b.node("GeometryNodeObjectInfo", {"Object": g["Object"], "As Instance": True},
+                       transform_space="ORIGINAL"), "Geometry")
+    inst = b.node("GeometryNodeInstanceOnPoints", {"Points": trail, "Instance": shape}).outputs[0]
+    # Recorded world transforms, seen from where this object is now.
+    inv = b.node("FunctionNodeInvertMatrix", {"Matrix": world}).outputs["Matrix"]
+    local = b.node("FunctionNodeMatrixMultiply", {0: inv, 1: b.named("mb_m", "FLOAT4X4")}).outputs[0]
+    inst = b.node("GeometryNodeSetInstanceTransform", {"Instances": inst, "Transform": local}).outputs[0]
+    return init_color(b, inst)
+
+
+def _point(b):
+    return b.node("GeometryNodePoints", {"Count": 1}).outputs[0]
+
+
+def _mospline(b, g):
+    """C4D MoSpline. Simple: Segments curves of Steps points, each step turned by Angle/Steps (curls, spirals,
+    flowers). Spline: segments copied from a source curve. Start/End trim (growth), Width makes tubes."""
+    segments, steps = g["Segments"], b.at_least(g["Steps"], 2.0)
+    i = b.index()
+    seg = b.math("FLOOR", b.math("DIVIDE", i, steps))
+    k = b.math("FLOORED_MODULO", i, steps)
+    turn = b.combine(z=b.math("MULTIPLY", seg, b.math("DIVIDE", 2 * math.pi, b.at_least(segments))))
+    start = b.node("FunctionNodeRotateVector", {"Vector": b.node("FunctionNodeRotateVector", {
+        "Vector": (0, 0, 1), "Rotation": b.euler_to_rot(b.combine(x=g["Spread"]))}).outputs[0],
+        "Rotation": b.euler_to_rot(turn)}).outputs[0]
+    step = b.node("FunctionNodeRotateVector", {"Vector": b.vmath("SCALE", start, scale=b.math(
+        "DIVIDE", g["Length"], steps)), "Rotation": b.euler_to_rot(b.vmath("SCALE", g["Angle"], scale=b.math(
+            "DIVIDE", k, steps)))}).outputs[0]
+    pts = b.node("GeometryNodePoints", {"Count": b.math("MULTIPLY", segments, steps)}).outputs[0]
+    walk = b.node("GeometryNodeAccumulateField", {"Value": step, "Group ID": seg}, data_type="FLOAT_VECTOR",
+                  domain="POINT")
+    pts = b.node("GeometryNodeSetPosition", {"Geometry": pts, "Position": out(walk, "Trailing")}).outputs[0]
+    simple = b.node("GeometryNodePointsToCurves", {"Points": pts, "Curve Group ID": seg, "Weight": k}).outputs[0]
+    source = b.object_geometry(g["Spline"])
+    copies = b.node("GeometryNodeInstanceOnPoints", {
+        "Points": b.node("GeometryNodePoints", {"Count": segments}).outputs[0], "Instance": source,
+        "Rotation": b.euler_to_rot(b.combine(z=b.math("MULTIPLY", b.index(), b.math(
+            "DIVIDE", 2 * math.pi, b.at_least(segments)))))}).outputs[0]
+    from_spline = b.node("GeometryNodeRealizeInstances", {"Geometry": copies}).outputs[0]
+    crv = b.index_switch("GEOMETRY", b.menu(["Simple", "Spline"], g["Mode"]), [simple, from_spline])
+    lo = b.math("FRACT", g["Offset"])
+    crv = b.node("GeometryNodeTrimCurve", {"Curve": crv, "Start": b.math("MINIMUM", b.math("ADD", g["Start"], lo), 1.0),
+                                           "End": b.math("MINIMUM", b.math("ADD", g["End"], lo), 1.0)},
+                 mode="FACTOR").outputs[0]
+    profile = b.node("GeometryNodeCurvePrimitiveCircle", {"Resolution": 8, "Radius": g["Width"]},
+                     mode="RADIUS").outputs[0]
+    along = out(b.node("GeometryNodeSplineParameter"), "Factor")
+    tube = b.node("GeometryNodeCurveToMesh", {"Curve": crv, "Profile Curve": profile, "Fill Caps": True,
+                                              "Scale": b.mix("FLOAT", along, 1.0, g["End Width"])}).outputs[0]
+    tube = b.node("GeometryNodeSetMaterial", {"Geometry": tube, "Material": g["Material"]}).outputs[0]
+    return b.switch("GEOMETRY", b.math("GREATER_THAN", g["Width"], 0.0), crv, tube)
+
+
+def _slab(b, curves, half=0.5):
+    """Closed slab (z -half..half) from filled XY curves, for 2D booleans. O(curve points)."""
+    flat = b.node("GeometryNodeFillCurve", {"Curve": b.node("GeometryNodeRealizeInstances",
+                                                            {"Geometry": curves}).outputs[0]}).outputs[0]
+    flat = b.node("GeometryNodeTransform", {"Geometry": flat,
+                                            "Translation": b.combine(z=b.math("MULTIPLY", half, -1.0))}).outputs[0]
+    return _solid(b, flat, b.math("MULTIPLY", half, 2.0))
+
+
+def _spline_mask(b, g):
+    """C4D Spline Mask: 2D boolean of the closed curves in a collection (XY plane), as curves or a filled mesh.
+    The shapes are folded one at a time (first op second op third ...): Union, Intersection, or Subtract
+    (the first curve by name minus the rest). Exact mesh booleans on extruded slabs: O(curves x boolean).
+
+    Slabs get slightly different thicknesses (coplanar faces are degenerate for booleans), so no face lies
+    at z = 0: a thin slice there, cut from the result, is exactly the 2D region."""
+    curves = b.node("GeometryNodeCollectionInfo", {"Collection": g["Collection"], "Separate Children": True,
+                                                   "Reset Children": False}, transform_space="RELATIVE").outputs[0]
+
+    def slab_of(k):
+        only = b.node("GeometryNodeDeleteGeometry", {"Geometry": curves, "Selection": b.bool_not(
+            b.compare(b.index(), k))}, domain="INSTANCE").outputs[0]
+        return _slab(b, only, b.math("ADD", 0.5, b.math("MULTIPLY", k, 0.0137)))
+
+    mode = b.menu(["Union", "Intersection", "Subtract"], g["Mode"])
+    rep_in, rep_out = b.node("GeometryNodeRepeatInput"), b.node("GeometryNodeRepeatOutput")
+    rep_in.pair_with_output(rep_out)
+    b.set(rep_in, "Iterations", b.at_least(b.math("SUBTRACT", b.instance_count(curves), 1.0), 0.0))
+    b.link(slab_of(0), geometry_socket(rep_in.inputs))
+    acc = geometry_socket(rep_in.outputs)
+    nxt = slab_of(b.math("ADD", out(rep_in, "Iteration"), 1.0))
+    def boolean(op):
+        n = b.node("GeometryNodeMeshBoolean", operation=op, solver="EXACT")
+        operands = socket_by_id(n.inputs, "Mesh 2")
+        if op == "DIFFERENCE":
+            b.link(acc, socket_by_id(n.inputs, "Mesh 1"))
+            b.link(nxt, operands)
+        else:  # Union / Intersect take every operand on the multi-input Mesh 2
+            b.link(acc, operands)
+            b.link(nxt, operands)
+        return out(n, "Mesh")
+
+    folded = [boolean(op) for op in ("UNION", "INTERSECT", "DIFFERENCE")]
+    b.link(b.index_switch("GEOMETRY", mode, folded), geometry_socket(rep_out.inputs))
+    solid = geometry_socket(rep_out.outputs)
+    box = b.node("GeometryNodeBoundBox", {"Geometry": solid})
+    bx, by, _ = b.separate(b.vmath("SUBTRACT", out(box, "Max"), out(box, "Min")))
+    cx, cy, _ = b.separate(b.vmath("SCALE", b.vmath("ADD", out(box, "Max"), out(box, "Min")), scale=0.5))
+    knife = b.node("GeometryNodeMeshCube", {"Size": b.combine(b.math("ADD", bx, 1.0), b.math("ADD", by, 1.0), 0.002)})
+    knife = b.node("GeometryNodeTransform", {"Geometry": knife.outputs[0], "Translation": b.combine(cx, cy)}).outputs[0]
+    cut = b.node("GeometryNodeMeshBoolean", operation="INTERSECT", solver="EXACT")
+    b.link(solid, socket_by_id(cut.inputs, "Mesh 2"))
+    b.link(knife, socket_by_id(cut.inputs, "Mesh 2"))
+    _, _, nz = b.separate(b.inp("GeometryNodeInputNormal"))
+    top = b.node("GeometryNodeDeleteGeometry", {"Geometry": out(cut, "Mesh"),
+                                                "Selection": b.math("LESS_THAN", nz, 0.99)}, domain="FACE").outputs[0]
+    fill = b.node("GeometryNodeTransform", {"Geometry": top, "Translation": (0, 0, -0.001)}).outputs[0]
+    border = b.math("LESS_THAN", out(b.node("GeometryNodeInputMeshEdgeNeighbors"), "Face Count"), 1.5)
+    outline = b.node("GeometryNodeMeshToCurve", {"Mesh": fill, "Selection": border}).outputs[0]
+    return b.index_switch("GEOMETRY", b.menu(["Curve", "Fill"], g["Output"]), [outline, fill])
+
+
 BUILDERS = {
     "motext": geometry_group("MB MoText", [
         S("Text", "STRING", "MOBLEND"),
@@ -230,6 +393,8 @@ BUILDERS = {
         S("Align", "MENU"),
         S("Character Spacing", "FLOAT", 1.0), S("Word Spacing", "FLOAT", 1.0), S("Line Spacing", "FLOAT", 1.0),
         S("Upright", "BOOL", True, desc="Stand the text up facing front (-Y), like C4D MoText"),
+        S("Bevel", "FLOAT", 0.0, 0.0, subtype="DISTANCE", desc="Round the extruded letters' edges"),
+        S("Bevel Segments", "INT", 2, 1, 16),
         S("Material", "MATERIAL"),
     ], _motext, {"Split": "Characters", "Align": "Center"}),
     "sweep": geometry_group("MB Sweep", [
@@ -268,6 +433,32 @@ BUILDERS = {
         S("Flip", "BOOL", False, desc="Flip normals"),
         S("Material", "MATERIAL"),
     ], _loft),
+    "fracture_objects": geometry_group("MB Fracture Objects", [
+        S("Collection", "COLLECTION", desc="Each object becomes one clone, left where it is"),
+    ], _fracture_objects),
+    "moinstance": geometry_group("MB MoInstance", [
+        S("Object", "OBJECT", desc="Object instanced along this object's path"),
+        S("History Depth", "INT", 20, 1, 10000, desc="How many past positions to keep"),
+        S("Step", "INT", 1, 1, 1000, desc="Record one position every Step frames"),
+    ], _moinstance),
+    "mospline": geometry_group("MB MoSpline", [
+        S("Mode", "MENU", desc="Simple: generated curls. Spline: copies of a source curve"),
+        S("Segments", "INT", 1, 1, 1000), S("Steps", "INT", 64, 2, 10000),
+        S("Length", "FLOAT", 4.0, 0.0, subtype="DISTANCE"),
+        S("Angle", "VECTOR", (0, 0, 0), subtype="EULER", desc="Total turn along each segment (curls, spirals)"),
+        S("Spread", "FLOAT", 0.0, subtype="ANGLE", desc="Tilt segments outward (flower shapes)"),
+        S("Spline", "OBJECT", desc="Spline mode: source curve"),
+        S("Start", "FLOAT", 0.0, 0.0, 1.0, "FACTOR"), S("End", "FLOAT", 1.0, 0.0, 1.0, "FACTOR"),
+        S("Offset", "FLOAT", 0.0, desc="Slide the visible part along the curve"),
+        S("Width", "FLOAT", 0.0, 0.0, subtype="DISTANCE", desc="Above 0: a tube instead of a curve"),
+        S("End Width", "FLOAT", 1.0, 0.0, desc="Tube taper toward the end"),
+        S("Material", "MATERIAL"),
+    ], _mospline, {"Mode": "Simple"}),
+    "spline_mask": geometry_group("MB Spline Mask", [
+        S("Collection", "COLLECTION", desc="Closed curves in the XY plane"),
+        S("Mode", "MENU", desc="Union, Intersection, or Subtract (first by name minus the rest)"),
+        S("Output", "MENU", desc="Curves, or a filled mesh"),
+    ], _spline_mask, {"Mode": "Union", "Output": "Curve"}),
     "display": geometry_group("MB Display", [
         S("Viewport", "MENU", desc="Viewport only: Object, Bounding Box, Points or Off (renders always show clones)"),
     ], _display, {"Viewport": "Object"}),
@@ -279,6 +470,7 @@ BUILDERS = {
         S("Length", "INT", 24, 1, 10000, desc="Trails mode: frames a trail lasts"),
         S("Taper", "FLOAT", 1.0, 0.0, 1.0, "FACTOR", "Trails mode: how much old trail thins out"),
         S("World Space", "BOOL", True, desc="Trails mode: also trace the object's own movement"),
+        S("Trace Object", "OBJECT", desc="Trace this object's points/vertices instead of the clones"),
         S("Keep Clones", "BOOL", True),
         S("Material", "MATERIAL"),
     ], _tracer, {"Mode": "Connect"}),

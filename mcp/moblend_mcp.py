@@ -175,6 +175,26 @@ TOOLS = [
          {"profiles": names("Curve objects, in loft order"), "name": STR, "params": PARAMS}, ["profiles"]),
     tool("set_loft_profiles", "Replace a loft's profile curves (order matters), keeping its settings.",
          {"loft": OBJ, "profiles": names()}, ["loft", "profiles"]),
+    tool("create_fracture_objects", "Fracture (mode Off): each object becomes one effectable clone, in place.",
+         {"objects": names(), "name": STR}, ["objects"]),
+    tool("create_moinstance", "MoInstance: animate the new object; `source` is instanced along its recent path. "
+         "Params: History Depth, Step (frames). Needs playback from the start frame.",
+         {"source": OBJ, "name": STR, "params": PARAMS, "location": VEC}, ["source"]),
+    tool("create_mospline", "MoSpline. Simple mode params: Segments, Steps, Length, Angle (total curl, deg), "
+         "Spread (deg); Spline mode: Spline (source curve), Segments. Both: Start/End (growth), Offset, Width "
+         "(tube radius, 0 = curve), End Width, Material.",
+         {"mode": enum(("Simple", "Spline")), "spline": OBJ, "name": STR, "params": PARAMS, "location": VEC}),
+    tool("create_mospline_turtle", "MoSpline Turtle: an L-system curve. premise, rules ('F=F[+F]F[-F]F', comma "
+         "separated), iterations, angle (deg), step, shrink. Commands: F G draw, f move, + - yaw, & ^ pitch, "
+         "\\ / roll, | turn around, [ ] branch, ! shrink. Change later with set_params (Premise, Rules, ...).",
+         {"premise": STR, "rules": STR, "iterations": INT, "angle": NUM, "step": NUM, "shrink": NUM, "name": STR,
+          "location": VEC}),
+    tool("create_spline_mask", "Spline Mask: 2D boolean of closed XY curves (Union, Intersection, Subtract = first "
+         "by name minus the rest), output Curve or Fill.",
+         {"curves": names(), "mode": enum(("Union", "Intersection", "Subtract")),
+          "output": enum(("Curve", "Fill")), "name": STR}, ["curves"]),
+    tool("add_spline_wrap", "Spline Wrap: bend objects along a curve; axis = the objects' long axis.",
+         {"targets": names(), "curve": OBJ, "axis": enum(("X", "Y", "Z", "-X", "-Y", "-Z"))}, ["targets", "curve"]),
     tool("add_generator",
          "Add a generator to an object: fracture (mode Islands|Polygons: pieces become effectable), voronoi "
          "(options = Voronoi settings, re-applied live: Sources — use_generator, distribution UNIFORM/NORMAL/"

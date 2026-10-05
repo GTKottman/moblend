@@ -19,7 +19,7 @@ EFFECTOR_ICONS = {"plain": "EMPTY_AXIS", "random": "RNDCURVE", "step": "IPO_CONS
                   "push_apart": "FULLSCREEN_EXIT"}
 DEFORMER_ICONS = {"bend": "MOD_SIMPLEDEFORM", "twist": "MOD_SCREW", "taper": "MOD_SIMPLEDEFORM",
                   "stretch": "MOD_SIMPLEDEFORM", "wave": "MOD_WAVE", "spherify": "MESH_UVSPHERE",
-                  "shear": "MOD_LATTICE", "bulge": "MOD_CAST", "displace": "MOD_DISPLACE"}
+                  "shear": "MOD_LATTICE", "bulge": "MOD_CAST", "displace": "MOD_DISPLACE", "moextrude": "MOD_SOLIDIFY"}
 # (kind, menu label, icon); None draws a separator. Kinds with their own operator are in GENERATOR_OPERATORS.
 GENERATOR_MENU = (("motext", "MoText", "FONT_DATA"), ("sweep", "Sweep (active curve)", "CURVE_PATH"),
                   ("fracture", "Fracture (active)", "MOD_EDGESPLIT"),
@@ -27,11 +27,19 @@ GENERATOR_MENU = (("motext", "MoText", "FONT_DATA"), ("sweep", "Sweep (active cu
                   ("tracer", "Tracer (active cloner)", "CURVE_DATA"),
                   ("volume", "Volume Builder (selected)", "MOD_REMESH"),
                   ("loft", "Loft (selected curves)", "SURFACE_NSURFACE"),
+                  ("fracture_objects", "Fracture (selected objects)", "OUTLINER_COLLECTION"),
+                  ("moinstance", "MoInstance (active = source)", "TRACKING"),
+                  ("mospline", "MoSpline", "CURVE_NCURVE"),
+                  ("turtle", "MoSpline Turtle (L-system)", "OUTLINER_OB_FORCE_FIELD"),
+                  ("spline_mask", "Spline Mask (selected curves)", "SELECT_INTERSECT"),
+                  ("spline_wrap", "Spline Wrap (selected → active curve)", "MOD_CURVE"),
                   None,
                   ("lathe", "Lathe", "MOD_SCREW"), ("extrude", "Extrude", "MOD_SOLIDIFY"),
                   ("symmetry", "Symmetry", "MOD_MIRROR"), ("boole", "Boole (cut active)", "MOD_BOOLEAN"),
                   ("subdivision", "Subdivision", "MOD_SUBSURF"))
-GENERATOR_OPERATORS = {"voronoi": "moblend.voronoi", "volume": "moblend.volume_builder", "loft": "moblend.loft"}
+GENERATOR_OPERATORS = {"voronoi": "moblend.voronoi", "volume": "moblend.volume_builder", "loft": "moblend.loft",
+                       **dict.fromkeys(("fracture_objects", "moinstance", "mospline", "turtle", "spline_mask",
+                                        "spline_wrap"), "moblend.mograph_object")}
 FIELD_ICONS = {"Infinite": "WORLD", "Solid": "WORLD", "Group": "OUTLINER_COLLECTION", "Sphere": "SPHERE",
                "Box": "CUBE", "Cylinder": "MESH_CYLINDER", "Cone": "MESH_CONE", "Capsule": "MESH_CAPSULE",
                "Torus": "MESH_TORUS", "Linear": "IPO_LINEAR", "Radial": "DRIVER_ROTATIONAL_DIFFERENCE",
@@ -183,6 +191,32 @@ class MB_OT_loft(_MBOperator):
         if len(curves) < 2:
             return self.fail("Select at least two profile curves")
         return api.create_loft(api.sort_along_spread(curves))
+
+
+class MB_OT_mograph_object(_MBOperator):
+    """Add a MoGraph object from the selection"""
+    bl_idname = "moblend.mograph_object"
+    bl_label = "Add MoGraph Object"
+    kind: EnumProperty(items=[(k, k.replace("_", " ").title(), "") for k in (
+        "fracture_objects", "moinstance", "mospline", "turtle", "spline_mask", "spline_wrap")])
+
+    def run(self, ctx):
+        act, sel = ctx.active_object, list(ctx.selected_objects)
+        cursor = ctx.scene.cursor.location.copy()
+        if self.kind == "fracture_objects":
+            return api.create_fracture_objects(_selected_meshes(ctx)) if sel else self.fail("Select objects")
+        if self.kind == "moinstance":
+            return api.create_moinstance(act, location=cursor) if act else self.fail("Select the source object")
+        if self.kind == "mospline":
+            return api.create_mospline(location=cursor)
+        if self.kind == "turtle":
+            return api.create_mospline_turtle(location=cursor)
+        curves = [o for o in sel if o.type == "CURVE"]
+        if self.kind == "spline_mask":
+            return api.create_spline_mask(curves) if len(curves) >= 2 else self.fail("Select 2+ closed curves")
+        if not act or act.type != "CURVE":
+            return self.fail("Select the objects, then the curve last (active)")
+        return api.add_spline_wrap([o for o in sel if o != act], act)
 
 
 class MB_OT_volume_members(_MBOperator):
@@ -380,7 +414,9 @@ class MB_MT_generators(bpy.types.Menu):
             if entry is None:
                 self.layout.separator()
             elif entry[0] in GENERATOR_OPERATORS:
-                self.layout.operator(GENERATOR_OPERATORS[entry[0]], text=entry[1], icon=entry[2])
+                op = self.layout.operator(GENERATOR_OPERATORS[entry[0]], text=entry[1], icon=entry[2])
+                if GENERATOR_OPERATORS[entry[0]] == "moblend.mograph_object":
+                    op.kind = entry[0]
             else:
                 kind, label, icon = entry
                 self.layout.operator("moblend.add_generator", text=label, icon=icon).kind = kind
@@ -610,7 +646,7 @@ class MB_Prefs(bpy.types.AddonPreferences):
 
 
 CLASSES = (MB_OT_add_cloner, MB_OT_add_effector, MB_OT_add_deformer, MB_OT_add_generator, MB_OT_voronoi,
-           MB_OT_volume_builder, MB_OT_volume_members, MB_OT_loft,
+           MB_OT_volume_builder, MB_OT_volume_members, MB_OT_loft, MB_OT_mograph_object,
            MB_OT_cloner_mode,
            MB_OT_link, MB_OT_move_effector, MB_OT_color_material, MB_OT_bridge, MB_OT_rebuild,
            MB_OT_add_field, MB_OT_link_field, MB_OT_group_effector, MB_OT_clones, MB_OT_add_matrix,

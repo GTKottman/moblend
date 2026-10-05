@@ -12,7 +12,7 @@ import bpy
 from ..catalog import COLOR_ATTR, KEY_VERSION
 from .core import TEXTURE_INPUTS, apply, falloff_group, sound_level, texture
 from .formula import compile_expr
-from .util import S, out
+from .util import S, geometry_socket, out
 
 PARAMS = [
     S("Position", "VECTOR", (0, 0, 0), subtype="TRANSLATION"),
@@ -257,8 +257,8 @@ def _push_apart(b, g, w):
     rep_in, rep_out = b.node("GeometryNodeRepeatInput"), b.node("GeometryNodeRepeatOutput")
     rep_in.pair_with_output(rep_out)
     b.set(rep_in, "Iterations", g["Iterations"])
-    b.link(pts, _pick_geometry(rep_in.inputs))
-    state = _pick_geometry(rep_in.outputs)
+    b.link(pts, geometry_socket(rep_in.inputs))
+    state = geometry_socket(rep_in.outputs)
     _, has, away = nearest(state)
     overlap = b.math("MAXIMUM", b.math("SUBTRACT", diameter, b.vmath("LENGTH", away)), 0.0)
     # Coincident clones have no direction between them: give each its own random one so they separate.
@@ -266,8 +266,8 @@ def _push_apart(b, g, w):
     direction = b.mix("VECTOR", b.math("LESS_THAN", b.vmath("LENGTH", away), 1e-6), b.vmath("NORMALIZE", away), jitter)
     push = b.vmath("SCALE", direction, scale=b.math("MULTIPLY", b.math("MULTIPLY", overlap, 0.5), has))
     b.link(b.node("GeometryNodeSetPosition", {"Geometry": state, "Offset": push}).outputs[0],
-           _pick_geometry(rep_out.inputs))
-    relaxed = b.node("GeometryNodeSampleIndex", {"Geometry": _pick_geometry(rep_out.outputs), "Value": b.position(),
+           geometry_socket(rep_out.inputs))
+    relaxed = b.node("GeometryNodeSampleIndex", {"Geometry": geometry_socket(rep_out.outputs), "Value": b.position(),
                                                  "Index": b.index()},
                      data_type="FLOAT_VECTOR", domain="POINT").outputs[0]
     pos, rot, scale = b.instance_trs()
@@ -281,10 +281,6 @@ def _push_apart(b, g, w):
         "SUBTRACT", 1.0, b.math("MULTIPLY", clash, b.math("GREATER_THAN", w, 0.5))), "Local Space": True}).outputs[0]
     geo = b.index_switch("GEOMETRY", b.menu(["Push Apart", "Hide"], g["Mode"]), [pushed, hidden])
     return _apply(b, g, geo, w)
-
-
-def _pick_geometry(sockets):
-    return next(s for s in sockets if s.type == "GEOMETRY")
 
 
 _plain_builder = _effector("MB Effector Plain", [], _plain, falloff="Sphere")

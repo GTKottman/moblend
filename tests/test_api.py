@@ -567,6 +567,14 @@ def motext_splits_characters():
     assert len(instances(t)) == 2
     e = api.add_effector("plain", cloners=[t.name], falloff="Infinite", params={"Rotation": [0, 0, 45]})
     assert e
+    import bmesh
+    for inst in bpy.context.evaluated_depsgraph_get().object_instances:  # every letter is a closed solid
+        if inst.is_instance and inst.parent and inst.parent.original == t:
+            bm = bmesh.new()
+            bm.from_mesh(inst.object.data)
+            open_edges = sum(1 for edge in bm.edges if not edge.is_manifold)
+            bm.free()
+            assert open_edges == 0, open_edges
 
 
 @case
@@ -847,6 +855,98 @@ def camera_frames_what_is_visible():
     api.create_cloner("linear", objects=[bpy.context.object], params={"Count": 2, "Offset": [0, 0, 4]})
     center, radius = commands._scene_bounds()  # clones span z -1..5 (source hidden, clones counted)
     assert near(center, (10, 0, 2), 0.01) and abs(radius - (4 + 4 + 36) ** 0.5 / 2) < 0.01, (center, radius)
+
+
+def _evaluated(o):
+    return o.evaluated_get(bpy.context.evaluated_depsgraph_get()).evaluated_geometry()
+
+
+def _area(o):
+    geo = _evaluated(o)  # keep the geometry set alive while reading its mesh
+    return sum(p.area for p in geo.mesh.polygons)
+
+
+@case
+def fracture_objects_and_moinstance():
+    a, b = _cube(1, (0, 0, 0)), _cube(1, (3, 0, 0))
+    fr = api.create_fracture_objects([a, b])
+    assert sorted(round(x.translation.x, 3) for x in instances(fr)) == [0, 3]  # each object a clone, in place
+    _lift([fr], falloff="Infinite")
+    assert all(abs(x.translation.z - 1) < 1e-4 for x in instances(fr))
+    sc = bpy.context.scene
+    sc.frame_set(1)
+    src = _cube(0.3, (0, 9, 0))
+    mi = api.create_moinstance(src, params={"History Depth": 5}, location=(0, 0, 0))
+    mi.keyframe_insert("location", frame=1)
+    mi.location = (10, 0, 0)
+    mi.keyframe_insert("location", frame=11)
+    for f in range(1, 12):
+        sc.frame_set(f)
+    xs = sorted(round(x.translation.x, 2) for x in instances(mi))  # world space
+    assert len(xs) == 5 and xs[0] < xs[-1] == 10.0, xs  # the last 5 positions, newest where it is now
+
+
+@case
+def mospline_modes_and_turtle():
+    ms = api.create_mospline("Simple", params={"Segments": 3, "Steps": 10, "Angle": [0, 90, 0]},
+                             location=(0, 0, 0))
+    geo = _evaluated(ms)
+    assert geo.curves is not None and len(geo.curves.curves) == 3
+    api.set_params(ms, {"Width": 0.05})
+    geo = _evaluated(ms)
+    assert geo.mesh is not None and len(geo.mesh.vertices) > 100
+    t = api.create_mospline_turtle(premise="F", rules="F=F[+F]F[-F]F", iterations=2)
+    n2 = len(t.data.splines)
+    api.set_params(t, {"Iterations": 3})
+    assert len(t.data.splines) > n2 > 1
+
+
+@case
+def spline_mask_and_spline_wrap():
+    a = _circle(1, (0, 0, 0))
+    b = _circle(1, (1, 0, 0))
+    mask = api.create_spline_mask([a, b], mode="Union", output="Fill")
+    union = _area(mask)
+    api.set_params(mask, {"Mode": "Intersection"})
+    inter = _area(mask)
+    api.set_params(mask, {"Mode": "Subtract"})
+    diff = _area(mask)
+    assert 4.0 < union < 5.2 and 1.0 < inter < 1.4 and abs(union - inter - 2 * diff) < 0.1, (union, inter, diff)
+    api.set_params(mask, {"Output": "Curve"})
+    assert _evaluated(mask).curves is not None
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.1, depth=4, rotation=(0, math.pi / 2, 0))
+    rod = bpy.context.object
+    api.add_spline_wrap([rod], _circle(2, (0, 0, 0)))
+    ev = rod.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    assert max(abs(v.co.y) for v in ev.data.vertices) > 0.5  # bent around the circle
+
+
+@case
+def moextrude_bevel_displace_and_tracer_object():
+    cube = _cube(2)
+    before = len(cube.data.polygons)
+    api.add_deformer("moextrude", targets=[cube], params={"Steps": 2, "Offset": 0.3})
+    ev = cube.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    assert len(ev.data.polygons) == before + 6 * 4 * 2  # each face: 4 side faces per step
+    t = api.create_motext("O", location=(0, 0, 0), params={"Depth": 0.3})
+    plain = sum(len(g.mesh.vertices) for g in [_evaluated(t)] if g.mesh) + len(instances(t))
+    api.set_params(t, {"Bevel": 0.02})
+    assert len(instances(t)) == 1 and plain
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=10, y_subdivisions=10, size=2)
+    plane = bpy.context.object
+    api.add_deformer("displace", targets=[plane], params={"Amplitude": 0.5, "Texture": "Gradient"})
+    ev = plane.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    assert max(v.co.z for v in ev.data.vertices) - min(v.co.z for v in ev.data.vertices) > 0.3
+    sc = bpy.context.scene
+    sc.frame_set(1)
+    holder = api.create_cloner("linear", params={"Count": 1}, location=(0, 0, 0))
+    mover = _cube(0.2, (0, 0, 0))
+    api.add_tracer(holder, {"Mode": "Trails", "Trace Object": mover.name, "Length": 10, "World Space": False})
+    for f in range(1, 6):
+        mover.location.x = f
+        sc.frame_set(f)
+    geo = _evaluated(holder)
+    assert geo.mesh is not None and len(geo.mesh.vertices) > 0
 
 
 @case

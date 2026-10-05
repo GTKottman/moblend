@@ -11,7 +11,7 @@ import bpy
 from ..catalog import KEY_VERSION
 
 # Bump when any group's nodes or interface change; stale groups are rebuilt in place.
-GROUP_VERSION = 26
+GROUP_VERSION = 32
 
 _SOCKET_TYPES = {
     "GEOMETRY": "NodeSocketGeometry", "FLOAT": "NodeSocketFloat", "INT": "NodeSocketInt",
@@ -45,6 +45,16 @@ def _pick(sockets, key):
 
 def out(node, key=0):
     return _pick(node.outputs, key)
+
+
+def geometry_socket(sockets):
+    """The geometry socket of a zone node (repeat / simulation / for-each), whose other sockets vary."""
+    return next(s for s in sockets if s.type == "GEOMETRY")
+
+
+def socket_by_id(sockets, identifier):
+    """Socket by identifier: some nodes rename sockets per operation, identifiers stay."""
+    return next(s for s in sockets if s.identifier == identifier)
 
 
 class B:
