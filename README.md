@@ -30,7 +30,7 @@ add-on works in any file you open.
 | Cinema 4D | MoBlend |
 |---|---|
 | Cloner: Linear / Radial / Grid (incl. Honeycomb) / Object / Spline | Cloner with the same modes. Clones iterate through children or pick randomly, and keep each child's rotation and scale |
-| Plain, Random, Step, Shader, Formula, Time, Target, Delay effectors | plain, random (random or noise mode), step, noise, wave, time, target, delay (blend or spring) |
+| Plain, Random, Step, Shader, Formula, Time, Target, Delay, Inheritance, Sound effectors | plain, random (random or noise mode), step, noise, wave, time, target, delay (blend or spring), inheritance (morph into another cloner), sound (each clone its own frequency band) |
 | Effector position/rotation/scale/color + fields | Same parameters. Falloff fields: Infinite, Sphere, Box, Cylinder, Linear, Noise, Random, plus Inner and Invert |
 | MoGraph color | Effector **Color** + **Color Mix**. The "MB MoGraph Color" material displays it |
 | MoText (character / word / line) | MoText: upright, extruded, split into pieces effectors can move |
@@ -45,8 +45,8 @@ add-on works in any file you open.
 ### Roadmap
 
 - [x] Voronoi Fracture (`voronoi`: exact convex cells, inner-face material, gap, re-fracture)
-- [ ] Inheritance effector
-- [ ] Sound effector
+- [x] Inheritance effector
+- [x] Sound effector (per-clone log-spaced frequency bands)
 - [ ] Volume Builder
 - [ ] Loft
 - [ ] Tracer trails

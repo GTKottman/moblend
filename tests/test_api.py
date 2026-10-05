@@ -218,6 +218,45 @@ def target_effector_faces_effector():
 
 
 @case
+def inheritance_effector_morphs_to_source():
+    a = api.create_cloner("linear", name="A", params={"Count": 4, "Offset": [2, 0, 0]}, location=(0, 0, 0))
+    b = api.create_cloner("linear", name="B", params={"Count": 4, "Offset": [0, 0, 3]}, location=(0, 0, 0))
+    api.add_effector("plain", cloners=[b.name], falloff="Infinite", params={"Color": "#00ff00", "Color Mix": 1})
+    e = api.add_effector("inheritance", cloners=[a.name], params={"Source": b.name})
+    by_height = sorted(instances(a), key=lambda m: m.translation.z)
+    assert all(near(x.translation, (0, 0, 3 * i)) for i, x in enumerate(by_height))
+    api.set_params(e, {"Strength": 0.5})
+    pts = sorted((x.translation for x in instances(a)), key=lambda v: v.z)
+    assert all(near(p, (i, 0, 1.5 * i)) for i, p in enumerate(pts)), pts
+
+
+def _tone(freq, seconds=3, rate=44100):
+    import struct
+    import tempfile
+    import wave
+    path = os.path.join(tempfile.gettempdir(), f"moblend_tone_{freq}.wav")
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(struct.pack("<h", int(20000 * math.sin(2 * math.pi * freq * i / rate)))
+                               for i in range(rate * seconds)))
+    return path
+
+
+@case
+def sound_effector_lifts_the_clone_hearing_the_tone():
+    c = api.create_cloner("linear", params={"Count": 10}, location=(0, 0, 0))
+    e = api.add_effector("sound", cloners=[c.name], params={"Sound": _tone(440), "Position": [0, 0, 2],
+                                                             "Local Space": False})
+    bpy.context.scene.frame_set(30)
+    zs = [round(x.translation.z, 2) for x in sorted(instances(c), key=lambda m: m.translation.x)]
+    assert zs[4] > 1.9 and max(zs[:4] + zs[5:]) < 0.1, zs  # log bands: clone 4 covers 392-693 Hz
+    api.set_params(e, {"Mode": "All"})
+    assert all(x.translation.z > 1.9 for x in instances(c))
+
+
+@case
 def delay_effector_lags():
     sc = bpy.context.scene
     sc.frame_set(1)

@@ -11,14 +11,14 @@ import bpy
 from ..catalog import KEY_VERSION
 
 # Bump when any group's nodes or interface change; stale groups are rebuilt in place.
-GROUP_VERSION = 10
+GROUP_VERSION = 11
 
 _SOCKET_TYPES = {
     "GEOMETRY": "NodeSocketGeometry", "FLOAT": "NodeSocketFloat", "INT": "NodeSocketInt",
     "BOOL": "NodeSocketBool", "VECTOR": "NodeSocketVector", "ROTATION": "NodeSocketRotation",
     "MATRIX": "NodeSocketMatrix", "COLOR": "NodeSocketColor", "STRING": "NodeSocketString",
     "OBJECT": "NodeSocketObject", "COLLECTION": "NodeSocketCollection", "MATERIAL": "NodeSocketMaterial",
-    "FONT": "NodeSocketFont", "MENU": "NodeSocketMenu",
+    "FONT": "NodeSocketFont", "MENU": "NodeSocketMenu", "SOUND": "NodeSocketSound",
 }
 
 
@@ -203,10 +203,10 @@ class B:
         """Noise texture node (use outputs Factor / Color)."""
         return self.node("ShaderNodeTexNoise", {"Vector": vector, "W": w, "Detail": detail}, noise_dimensions="4D")
 
-    def object_geometry(self, obj, space="RELATIVE"):
-        """Realized geometry of an object input."""
-        info = self.node("GeometryNodeObjectInfo", {"Object": obj}, transform_space=space)
-        return self.node("GeometryNodeRealizeInstances", {"Geometry": out(info, "Geometry")}).outputs[0]
+    def object_geometry(self, obj, space="RELATIVE", realize=True):
+        """Geometry of an object input; realized unless `realize` is False (keeps a cloner's instances)."""
+        geo = out(self.node("GeometryNodeObjectInfo", {"Object": obj}, transform_space=space), "Geometry")
+        return self.node("GeometryNodeRealizeInstances", {"Geometry": geo}).outputs[0] if realize else geo
 
     def join(self, *geos):
         n = self.node("GeometryNodeJoinGeometry")

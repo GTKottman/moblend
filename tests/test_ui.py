@@ -15,6 +15,14 @@ import moblend  # noqa: E402
 from moblend import api, ui  # noqa: E402
 
 
+ICONS = {i.identifier for i in bpy.types.UILayout.bl_rna.functions["prop"].parameters["icon"].enum_items}
+
+
+def check_icon(k):
+    icon = k.get("icon", "NONE")
+    assert icon in ICONS, f"unknown icon {icon}"
+
+
 class Rec:
     def __init__(self, log):
         self.log = log
@@ -33,15 +41,18 @@ class Rec:
         self.log.append(("prop", text or attr))
 
     def label(self, text="", **k):
+        check_icon(k)
         self.log.append(("label", text))
 
     def operator(self, idname, **k):
+        check_icon(k)
         mod, op = idname.split(".")
         assert hasattr(getattr(bpy.ops, mod), op), f"no operator {idname}"
         self.log.append(("op", idname))
         return type("Props", (), {})()
 
     def menu(self, name, **k):
+        check_icon(k)
         assert hasattr(bpy.types, name), f"no menu {name}"
 
     def separator(self, **k):

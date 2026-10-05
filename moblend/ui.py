@@ -12,7 +12,8 @@ from .nodes.core import FALLOFF_NAMES
 CLONER_ICONS = {"linear": "IPO_LINEAR", "radial": "MESH_CIRCLE", "grid": "MESH_GRID",
                 "object": "MESH_ICOSPHERE", "spline": "CURVE_BEZCURVE"}
 EFFECTOR_ICONS = {"plain": "EMPTY_AXIS", "random": "RNDCURVE", "step": "IPO_CONSTANT", "noise": "FORCE_TURBULENCE",
-                  "wave": "FORCE_HARMONIC", "time": "TIME", "target": "TRACKER", "delay": "FORCE_DRAG"}
+                  "wave": "FORCE_HARMONIC", "time": "TIME", "target": "TRACKER", "delay": "FORCE_DRAG",
+                  "inheritance": "MOD_DATA_TRANSFER", "sound": "SPEAKER"}
 DEFORMER_ICONS = {"bend": "MOD_SIMPLEDEFORM", "twist": "MOD_SCREW", "taper": "MOD_SIMPLEDEFORM",
                   "stretch": "MOD_SIMPLEDEFORM", "wave": "MOD_WAVE", "spherify": "MESH_UVSPHERE",
                   "shear": "MOD_LATTICE", "bulge": "MOD_CAST", "displace": "MOD_DISPLACE"}

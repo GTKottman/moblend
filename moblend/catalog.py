@@ -8,7 +8,7 @@ import os
 import tempfile
 
 CLONER_MODES = ("linear", "radial", "grid", "object", "spline")
-EFFECTOR_TYPES = ("plain", "random", "step", "noise", "wave", "time", "target", "delay")
+EFFECTOR_TYPES = ("plain", "random", "step", "noise", "wave", "time", "target", "delay", "inheritance", "sound")
 FALLOFF_SHAPES = ("Infinite", "Sphere", "Box", "Cylinder", "Linear", "Noise", "Random")
 SIMPLE_DEFORMERS = {"bend": "BEND", "twist": "TWIST", "taper": "TAPER", "stretch": "STRETCH"}
 GN_DEFORMERS = ("wave", "spherify", "shear", "bulge", "displace")

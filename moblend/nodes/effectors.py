@@ -7,6 +7,7 @@ them updates every cloner it is linked to (see api/effector.py).
 
 import math
 
+from ..catalog import COLOR_ATTR
 from .util import S, out
 from .core import apply, falloff_group
 
@@ -148,6 +149,44 @@ def _delay(b, g, w):
     return b.node("GeometryNodeSetInstanceTransform", {"Instances": inst, "Transform": m}).outputs[0]
 
 
+def _inheritance(b, g, w):
+    """Blend each clone toward the transform (and color) of the same-index clone of Source. O(clones)."""
+    src = b.object_geometry(g["Source"], realize=False)
+    idx = b.index()
+
+    def from_source(value, dtype):
+        return b.node("GeometryNodeSampleIndex", {"Geometry": src, "Value": value, "Index": idx},
+                      data_type=dtype, domain="INSTANCE").outputs[0]
+
+    t, r, s = b.instance_trs()
+    tt, tr, ts = b.split_transform(from_source(b.inp("GeometryNodeInstanceTransform"), "FLOAT4X4"))
+    m = b.combine_transform(b.mix("VECTOR", w, t, tt), b.mix("ROTATION", w, r, tr), b.mix("VECTOR", w, s, ts))
+    geo = b.node("GeometryNodeSetInstanceTransform", {"Instances": g["Instances"], "Transform": m}).outputs[0]
+    color = b.mix("RGBA", b.math("MULTIPLY", w, g["Inherit Color"]), b.named(COLOR_ATTR, "FLOAT_COLOR"),
+                  from_source(b.named(COLOR_ATTR, "FLOAT_COLOR"), "FLOAT_COLOR"))
+    return b.store(geo, COLOR_ATTR, color, "FLOAT_COLOR", "INSTANCE")
+
+
+def _sound(b, g, w):
+    """Weight by the loudness of a frequency band: every clone its own band (Spread) or all the same."""
+    n = b.instance_count(g["Instances"])
+    ratio = b.math("DIVIDE", g["High"], b.at_least(g["Low"], 1.0))
+
+    def band_edge(i):
+        """Log-spaced band edge: Low * (High/Low)^(i/n)."""
+        return b.math("MULTIPLY", g["Low"], b.math("POWER", ratio, b.math("DIVIDE", i, b.at_least(n))))
+
+    spread = b.compare(b.menu(["Spread", "All"], g["Mode"]), 0)
+    idx = b.index()
+    lo = b.mix("FLOAT", spread, g["Low"], band_edge(idx))
+    hi = b.mix("FLOAT", spread, g["High"], band_edge(b.math("ADD", idx, 1.0)))
+    amp = b.node("GeometryNodeSampleSoundFrequencies", {
+        "Sound": g["Sound"], "Time": b.math("ADD", b.seconds(), g["Time Offset"]), "All Channels": True,
+        "Low": lo, "High": hi}).outputs[0]
+    level = b.math("MINIMUM", b.math("MULTIPLY", amp, g["Gain"]), 1.0)
+    return _apply(b, g, g["Instances"], b.math("MULTIPLY", w, level))
+
+
 _plain_builder = _effector("MB Effector Plain", [], _plain, falloff="Sphere")
 
 BUILDERS = {
@@ -175,6 +214,18 @@ BUILDERS = {
         S("Stiffness", "FLOAT", 0.2, 0.0, 1.0, "FACTOR", "Spring mode: pull toward the target"),
         S("Damping", "FLOAT", 0.75, 0.0, 1.0, "FACTOR", "Spring mode: velocity kept per frame"),
     ], _delay, menus={"Mode": "Spring"}, params=False),
+    "inheritance": _effector("MB Effector Inheritance", [
+        S("Source", "OBJECT", desc="Cloner (or other instancer) whose clone transforms to inherit"),
+        S("Inherit Color", "BOOL", True, desc="Also blend toward the source clones' colors"),
+    ], _inheritance, params=False),
+    "sound": _effector("MB Effector Sound", [
+        S("Sound", "SOUND", desc="Audio to listen to (name, or a file path via set_params)"),
+        S("Mode", "MENU", desc="Spread: each clone gets its own frequency band. All: whole range for every clone"),
+        S("Low", "FLOAT", 40.0, 1.0, 22000.0, desc="Lowest frequency (Hz)"),
+        S("High", "FLOAT", 12000.0, 1.0, 22000.0, desc="Highest frequency (Hz)"),
+        S("Gain", "FLOAT", 4.0, 0.0, desc="Amplitude multiplier before clamping to 1"),
+        S("Time Offset", "FLOAT", 0.0, desc="Seconds added to the scene time when sampling"),
+    ], _sound, menus={"Mode": "Spread"}),
 }
 
 # Falloff an effector of each type starts with (the type group's default otherwise).

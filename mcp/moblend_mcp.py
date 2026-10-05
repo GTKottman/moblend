@@ -68,8 +68,10 @@ EFFECTOR_DOC = (
     "field, like C4D Shader effector), wave (sine wave travelling through the clones), time (params "
     "per second, e.g. Rotation [0,0,90] spins 90°/s), target (clones' Z axis looks at the effector), "
     "delay (clones lag/spring behind the motion produced by effectors above it; needs playback from "
-    "frame 1). The effector object's scale is the falloff size. Common params: Strength, Position, "
-    "Rotation, Scale (added, -1 = vanish), Uniform Scale, Color, Color Mix, Local Space, Falloff, Inner, Invert.")
+    "frame 1), inheritance (params Source = another cloner, Inherit Color: clones morph into the source's "
+    "arrangement; animate Strength), sound (params Sound = sound name or audio file path, Mode Spread (each "
+    "clone its own log-spaced band between Low and High Hz) or All, Gain, Time Offset). The effector "
+    "object's scale is the falloff size. Common params: Strength, Position, Rotation, Scale (added, -1 = vanish), Uniform Scale, Color, Color Mix, Local Space, Falloff, Inner, Invert.")
 
 TOOLS = [
     tool("status", "Check that Blender with MoBlend is reachable; returns Blender version and file.", cmd="ping"),

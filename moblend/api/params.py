@@ -6,6 +6,7 @@ PARAMS_NODE in an effector/deformer wrapper group, or a custom property
 """
 
 import math
+import os
 
 import bpy
 
@@ -16,9 +17,13 @@ _SKIP = {"Geometry", "Instances", "Transform"}  # wired internally, never user-f
 _KIND = {"NodeSocketFloat": "FLOAT", "NodeSocketInt": "INT", "NodeSocketBool": "BOOL",
          "NodeSocketVector": "VECTOR", "NodeSocketColor": "COLOR", "NodeSocketString": "STRING",
          "NodeSocketObject": "OBJECT", "NodeSocketCollection": "COLLECTION", "NodeSocketMaterial": "MATERIAL",
-         "NodeSocketFont": "FONT", "NodeSocketMenu": "MENU", "NodeSocketRotation": "ROTATION"}
-_ID_COLLECTIONS = {"OBJECT": "objects", "COLLECTION": "collections", "MATERIAL": "materials", "FONT": "fonts"}
-_FONT_FILES = (".ttf", ".otf", ".pfb", ".woff", ".woff2")
+         "NodeSocketFont": "FONT", "NodeSocketMenu": "MENU", "NodeSocketRotation": "ROTATION",
+         "NodeSocketSound": "SOUND"}
+_ID_COLLECTIONS = {"OBJECT": "objects", "COLLECTION": "collections", "MATERIAL": "materials", "FONT": "fonts",
+                   "SOUND": "sounds"}
+# ID kinds that can also be given as a file path -> (extensions, bpy.data collection to load into).
+_LOADABLE = {"FONT": (".ttf", ".otf", ".pfb", ".woff", ".woff2"),
+             "SOUND": (".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".opus")}
 _TRANSFORM = {"location": "location", "size": "scale", "objectrotation": "rotation_euler",
               "objectscale": "scale", "rotation": "rotation_euler", "scale": "scale"}
 _FALLOFF_DISPLAY = {"Sphere": "SPHERE", "Box": "CUBE", "Cylinder": "CIRCLE", "Linear": "SINGLE_ARROW"}
@@ -101,8 +106,8 @@ class Param:
         coll = getattr(bpy.data, _ID_COLLECTIONS[self.kind])
         if v in coll:
             return coll[v]
-        if self.kind == "FONT" and str(v).lower().endswith(_FONT_FILES):
-            return bpy.data.fonts.load(v, check_existing=True)
+        if str(v).lower().endswith(_LOADABLE.get(self.kind, ())):
+            return coll.load(os.path.expanduser(v), check_existing=True)
         raise ValueError(f"{self.name}: no {self.kind.lower()} named {v!r}")
 
     def describe(self):
