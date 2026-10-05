@@ -5,7 +5,7 @@ from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
 
 from . import api, bridge
 from .catalog import (CLONER_MOD, CLONER_MODES, DEFORMER_TYPES, EFFECTOR_TYPES, GROUP_PREFIX, KEY_CLONES,
-                      KEY_TYPE, KEY_VERSION, KEY_VOLUME_SETS, Kind)
+                      KEY_PROFILES, KEY_TYPE, KEY_VERSION, KEY_VOLUME_SETS, Kind)
 from .nodes import build_all
 from .nodes.core import FALLOFF_NAMES
 
@@ -23,11 +23,12 @@ GENERATOR_MENU = (("motext", "MoText", "FONT_DATA"), ("sweep", "Sweep (active cu
                   ("voronoi", "Voronoi Fracture (active)", "MOD_EXPLODE"),
                   ("tracer", "Tracer (active cloner)", "CURVE_DATA"),
                   ("volume", "Volume Builder (selected)", "MOD_REMESH"),
+                  ("loft", "Loft (selected curves)", "SURFACE_NSURFACE"),
                   None,
                   ("lathe", "Lathe", "MOD_SCREW"), ("extrude", "Extrude", "MOD_SOLIDIFY"),
                   ("symmetry", "Symmetry", "MOD_MIRROR"), ("boole", "Boole (cut active)", "MOD_BOOLEAN"),
                   ("subdivision", "Subdivision", "MOD_SUBSURF"))
-GENERATOR_OPERATORS = {"voronoi": "moblend.voronoi", "volume": "moblend.volume_builder"}
+GENERATOR_OPERATORS = {"voronoi": "moblend.voronoi", "volume": "moblend.volume_builder", "loft": "moblend.loft"}
 EFFECTABLE = (Kind.CLONER, Kind.MOTEXT, Kind.FRACTURE)
 OWNERS = (Kind.EFFECTOR, Kind.DEFORMER, Kind.SIMPLE_DEFORMER)
 
@@ -155,6 +156,18 @@ class MB_OT_volume_builder(_MBOperator):
 
     def run(self, ctx):
         return api.create_volume_builder(add=_selected_meshes(ctx))
+
+
+class MB_OT_loft(_MBOperator):
+    """Skin a surface through the selected curves, ordered along the axis they are spread out on"""
+    bl_idname = "moblend.loft"
+    bl_label = "Loft"
+
+    def run(self, ctx):
+        curves = [o for o in ctx.selected_objects if o.type == "CURVE"]
+        if len(curves) < 2:
+            return self.fail("Select at least two profile curves")
+        return api.create_loft(api.sort_along_spread(curves))
 
 
 class MB_OT_volume_members(_MBOperator):
@@ -409,6 +422,11 @@ class MB_PT_main(bpy.types.Panel):
             _op(box, "moblend.voronoi", "FILE_REFRESH", text="Re-fracture",
                 **{arg: o[key] for arg, key in api.VORONOI_SETTINGS.items()})
         self.extra_modifiers(layout, o)
+        if api.mb_kind(o) == Kind.LOFT:
+            col = layout.box().column(align=True)
+            col.label(text="Profiles (in order)", icon="CURVE_DATA")
+            for name in o.get(KEY_PROFILES, ()):
+                col.label(text=name, icon="OBJECT_DATA")
         if api.mb_kind(o) == Kind.VOLUME:
             box = layout.box()
             for mode, key in KEY_VOLUME_SETS.items():
@@ -449,7 +467,7 @@ class MB_Prefs(bpy.types.AddonPreferences):
 
 
 CLASSES = (MB_OT_add_cloner, MB_OT_add_effector, MB_OT_add_deformer, MB_OT_add_generator, MB_OT_voronoi,
-           MB_OT_volume_builder, MB_OT_volume_members,
+           MB_OT_volume_builder, MB_OT_volume_members, MB_OT_loft,
            MB_OT_cloner_mode,
            MB_OT_link, MB_OT_move_effector, MB_OT_color_material, MB_OT_bridge, MB_OT_rebuild,
            MB_MT_cloners, MB_MT_effectors, MB_MT_deformers, MB_MT_generators, MB_MT_add,

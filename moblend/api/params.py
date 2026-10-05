@@ -168,7 +168,7 @@ def list_params(ref, modifier=None):
     """All editable parameters of a MoBlend object, primary modifier first. O(P)."""
     o = get_object(ref)
     k = mb_kind(o)
-    if k in (Kind.EFFECTOR, Kind.DEFORMER):
+    if k in (Kind.EFFECTOR, Kind.DEFORMER, Kind.LOFT):  # parameters live on the wrapper's Params node
         return _node_params(o[KEY_GROUP].nodes[PARAMS_NODE])
     if k == Kind.SIMPLE_DEFORMER:
         return [Param(key, o, f'["{key}"]', "FLOAT", "ANGLE" if key == "Angle" else None)

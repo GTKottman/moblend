@@ -36,6 +36,7 @@ add-on works in any file you open.
 | MoText (character / word / line) | MoText: upright, extruded, split into pieces effectors can move |
 | Fracture (explode segments) | Fracture: by islands, or every polygon on its own |
 | Voronoi Fracture | Voronoi Fracture: exact convex cells (pieces, seed, gap) with an inside material; re-fracture any time |
+| Loft | Loft: smooth surface through ordered profile curves, with end caps |
 | Sweep (with growth) | Sweep: path + optional profile. Animate Start/End for growth, plus twist and end-scale taper |
 | Tracer (connect) | Tracer: a tube through the clones |
 | Volume Builder + Volume Mesher | Volume Builder: union of Add objects minus Subtract objects as one mesh (SDF grids), with Smooth, Fillet, Offset and Adaptivity |
@@ -49,7 +50,7 @@ add-on works in any file you open.
 - [x] Inheritance effector
 - [x] Sound effector (per-clone log-spaced frequency bands)
 - [x] Volume Builder (add/subtract sets, smooth, fillet, offset)
-- [ ] Loft
+- [x] Loft (ordered profiles, smooth rails, end caps in any plane)
 - [ ] Tracer trails
 - [ ] MoGraph Selection
 - [ ] Layered field lists (several falloffs per effector)

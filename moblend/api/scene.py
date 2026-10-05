@@ -33,11 +33,10 @@ def delete(ref):
     """Delete a MoBlend object cleanly: owners detach from targets; cloners release their children."""
     o = get_object(ref)
     k, name = mb_kind(o), o.name
+    group = o.get(KEY_GROUP)
     if k in _OWNERS:
         for t in users_of(o):
             detach(o, t)
-        if o.get(KEY_GROUP) is not None:
-            bpy.data.node_groups.remove(o[KEY_GROUP])
     elif k == Kind.CLONER and o.get(KEY_CLONES) is not None:
         coll = o[KEY_CLONES]
         scene_coll = bpy.context.scene.collection
@@ -47,6 +46,8 @@ def delete(ref):
             s.location = o.location
         bpy.data.collections.remove(coll)
     bpy.data.objects.remove(o)
+    if group is not None:  # effector/deformer/loft wrapper
+        bpy.data.node_groups.remove(group)
     return name
 
 

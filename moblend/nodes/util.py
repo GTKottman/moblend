@@ -11,7 +11,7 @@ import bpy
 from ..catalog import KEY_VERSION
 
 # Bump when any group's nodes or interface change; stale groups are rebuilt in place.
-GROUP_VERSION = 14
+GROUP_VERSION = 15
 
 _SOCKET_TYPES = {
     "GEOMETRY": "NodeSocketGeometry", "FLOAT": "NodeSocketFloat", "INT": "NodeSocketInt",

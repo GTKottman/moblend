@@ -127,6 +127,12 @@ TOOLS = [
           "params": PARAMS}, ["add"]),
     tool("add_volume_objects", "Move more objects into a Volume Builder's add or subtract set.",
          {"builder": OBJ, "objects": names(), "mode": enum(("add", "subtract"))}, ["builder", "objects"]),
+    tool("create_loft",
+         "Loft: a surface through profile curves in the given order (smooth by default; closed profiles get "
+         "end caps). Params: Points (around), Rows (along), Smooth, Caps, Flip, Material.",
+         {"profiles": names("Curve objects, in loft order"), "name": STR, "params": PARAMS}, ["profiles"]),
+    tool("set_loft_profiles", "Replace a loft's profile curves (order matters), keeping its settings.",
+         {"loft": OBJ, "profiles": names()}, ["loft", "profiles"]),
     tool("add_generator",
          "Add a generator to an object: fracture (mode Islands|Polygons: pieces become effectable), voronoi "
          "(pieces, seed, gap 0..0.9: convex Voronoi chunks, inner faces get an Inside material; call again to "

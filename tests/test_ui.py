@@ -59,6 +59,11 @@ class Rec:
         pass
 
 
+def _curve(z):
+    bpy.ops.curve.primitive_bezier_circle_add(location=(0, 9, z))
+    return bpy.context.object
+
+
 def _cube():
     bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0, 6))
     return bpy.context.object
@@ -94,12 +99,14 @@ objs = {
     "motext": api.create_motext("HI", name="T"),
     "voronoi": api.voronoi_fracture(api.get_object(c.name) and _cube(), pieces=4),
     "volume": api.create_volume_builder(add=[_cube()]),
+    "loft": api.create_loft([_curve(0), _curve(2)]),
 }
 api.add_effector("plain", name="P2", cloners=["T"])
 expect = {"cloner": ["Count X", "Spacing", "Radius", "R"], "effector": ["Strength", "Falloff", "Seed", "Mode"],
           "deformer": ["Amplitude", "Falloff"], "simple": ["Angle"], "motext": ["Text", "Split", "P2"],
           "voronoi": ["Pieces", "Seed", "Gap", "Mode"],
-          "volume": ["Voxel Size", "Smooth", "Add", "Subtract"]}
+          "volume": ["Voxel Size", "Smooth", "Add", "Subtract"],
+          "loft": ["Points", "Rows", "Caps", "Profiles (in order)"]}
 for k, o in objs.items():
     try:
         log = draw(ui.MB_PT_main, o)

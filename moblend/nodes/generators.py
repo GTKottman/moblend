@@ -107,6 +107,60 @@ def _volume(b, g):
     return b.node("GeometryNodeSetMaterial", {"Geometry": mesh, "Material": g["Material"]}).outputs[0]
 
 
+def _loft(b, g):
+    """Skin ordered profile curves (curve attribute mb_profile = order) into one surface.
+
+    Every profile is resampled to `Points`; rails run through matching points across profiles and are
+    resampled to `Rows`. O(Points x Rows) output; O(Points x profiles) to build the rails.
+    """
+    profiles = b.node("GeometryNodeResampleCurve", {"Curve": g["Geometry"], "Count": g["Points"]}).outputs[0]
+    pts = b.store(profiles, "mb_i", out(b.node("GeometryNodeSplineParameter"), "Index"), "INT", "POINT")
+    pts = b.node("GeometryNodeCurveToPoints", {"Curve": pts}, mode="EVALUATED").outputs[0]
+    rails = b.node("GeometryNodePointsToCurves", {"Points": pts, "Curve Group ID": b.named("mb_i", "INT"),
+                                                  "Weight": b.named("mb_profile", "INT")}).outputs[0]
+    smooth = b.node("GeometryNodeCurveSplineType", {"Curve": rails}, spline_type="CATMULL_ROM").outputs[0]
+    rails = b.switch("GEOMETRY", g["Smooth"], rails, smooth)
+    rows = g["Rows"]
+    rails = b.node("GeometryNodeResampleCurve", {"Curve": rails, "Count": rows}).outputs[0]
+
+    cyclic = b.node("GeometryNodeSampleIndex", {"Geometry": profiles, "Value": b.inp("GeometryNodeInputSplineCyclic"),
+                                                "Index": 0}, data_type="BOOLEAN", domain="CURVE").outputs[0]
+    columns = b.math("ADD", g["Points"], cyclic)  # a closed loop repeats its first column, welded below
+    grid = b.node("GeometryNodeMeshGrid", {"Vertices X": columns, "Vertices Y": rows}).outputs[0]
+    i = b.index()
+    column = b.math("FLOORED_MODULO", b.math("FLOOR", b.math("DIVIDE", i, rows)), g["Points"])
+    src = b.math("ADD", b.math("MULTIPLY", column, rows), b.math("FLOORED_MODULO", i, rows))
+    pos = b.node("GeometryNodeSampleIndex", {"Geometry": rails, "Value": b.position(), "Index": src},
+                 data_type="FLOAT_VECTOR", domain="POINT").outputs[0]
+    skin = b.node("GeometryNodeSetPosition", {"Geometry": grid, "Position": pos}).outputs[0]
+    # Grid winding (around x along) faces the opposite way to the cap fans for any profile/loft
+    # direction, so flipping the skin makes the closed surface consistent; "Flip" turns it inside out.
+    skin = b.node("GeometryNodeFlipFaces", {"Mesh": skin}).outputs[0]
+
+    def end_cap(order, flip):
+        """Triangle fan closing the profile with this order. Fill Curve would flatten it onto XY, so the
+        loop's edges are extruded to its centroid instead (works in any plane; welded by the merge below)."""
+        keep = b.compare(b.named("mb_profile", "INT"), order)
+        one = b.node("GeometryNodeDeleteGeometry", {"Geometry": profiles, "Selection": b.bool_not(keep)},
+                     domain="CURVE").outputs[0]
+        loop = b.node("GeometryNodeCurveToMesh", {"Curve": one}).outputs[0]
+        stat = b.node("GeometryNodeAttributeStatistic", {"Geometry": loop, "Attribute": b.position()},
+                      data_type="FLOAT_VECTOR", domain="POINT")
+        ext = b.node("GeometryNodeExtrudeMesh", {"Mesh": loop, "Offset Scale": 0.0}, mode="EDGES")
+        # Edge-mode offsets are per edge, so snap the new ring exactly onto the centroid instead.
+        fan = b.node("GeometryNodeSetPosition", {"Geometry": out(ext, "Mesh"), "Selection": out(ext, "Top"),
+                                                 "Position": out(stat, "Mean")}).outputs[0]
+        return b.node("GeometryNodeFlipFaces", {"Mesh": fan}).outputs[0] if flip else fan
+
+    count = out(b.node("GeometryNodeAttributeDomainSize", {"Geometry": profiles}, component="CURVE"), "Spline Count")
+    both = b.node("FunctionNodeBooleanMath", {0: g["Caps"], 1: cyclic}, operation="AND").outputs[0]
+    caps = b.switch("GEOMETRY", both, None, b.join(end_cap(0, True), end_cap(b.math("SUBTRACT", count, 1.0), False)))
+    mesh = b.node("GeometryNodeMergeByDistance", {"Geometry": b.join(skin, caps), "Distance": 1e-4}).outputs[0]
+    mesh = b.switch("GEOMETRY", g["Flip"], mesh, b.node("GeometryNodeFlipFaces", {"Mesh": mesh}).outputs[0])
+    mesh = b.node("GeometryNodeSetShadeSmooth", {"Geometry": mesh}).outputs[0]
+    return b.node("GeometryNodeSetMaterial", {"Geometry": mesh, "Material": g["Material"]}).outputs[0]
+
+
 BUILDERS = {
     "motext": geometry_group("MB MoText", [
         S("Text", "STRING", "MOBLEND"),
@@ -145,6 +199,14 @@ BUILDERS = {
         S("Adaptivity", "FLOAT", 0.0, 0.0, 1.0, "FACTOR", "Fewer polygons on flat areas"),
         S("Material", "MATERIAL"),
     ], _volume),
+    "loft": geometry_group("MB Loft", [
+        S("Points", "INT", 32, 3, 4096, desc="Samples around each profile"),
+        S("Rows", "INT", 32, 2, 4096, desc="Samples along the loft"),
+        S("Smooth", "BOOL", True, desc="Curve smoothly through the profiles (off = straight between them)"),
+        S("Caps", "BOOL", True, desc="Close the ends of closed profiles"),
+        S("Flip", "BOOL", False, desc="Flip normals"),
+        S("Material", "MATERIAL"),
+    ], _loft),
     "tracer": geometry_group("MB Tracer", [
         S("Radius", "FLOAT", 0.04, 0.0, subtype="DISTANCE"),
         S("Sides", "INT", 8, 3, 128),

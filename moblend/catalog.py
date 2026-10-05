@@ -29,6 +29,7 @@ class Kind:
     SWEEP = "sweep"
     FRACTURE = "fracture"
     VOLUME = "volume"
+    LOFT = "loft"
 
 
 # Custom properties stored on objects.
@@ -39,6 +40,7 @@ KEY_CLONES = "mb_clones"  # a cloner's source collection
 KEY_VOLUME_SETS = {"add": "mb_volume_add", "subtract": "mb_volume_subtract"}  # a volume builder's collections
 KEY_AXIS = "mb_axis"      # simple deformer axis
 KEY_VERSION = "mb_version"
+KEY_PROFILES = "mb_profiles"  # a loft's profile object names, in order
 KEY_SOURCE = "mb_source"  # original mesh kept by Voronoi Fracture for re-fracturing
 
 # Node group and modifier names.

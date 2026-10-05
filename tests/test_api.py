@@ -370,6 +370,43 @@ def volume_builder_unions_and_subtracts():
     assert abs(_evaluated_volume(v) - 11.0) < 0.15, _evaluated_volume(v)  # cutter (1 m³) lies fully inside
 
 
+def _circle(radius, location, rotation=(0, 0, 0)):
+    bpy.ops.curve.primitive_bezier_circle_add(radius=radius, location=location, rotation=rotation)
+    return bpy.context.object
+
+
+def _closed_signed_volume(o):
+    import bmesh
+    ev = o.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    bm = bmesh.new()
+    bm.from_mesh(ev.to_mesh())
+    open_edges = sum(1 for e in bm.edges if not e.is_manifold)
+    v = bm.calc_volume(signed=True)
+    bm.free()
+    ev.to_mesh_clear()
+    return open_edges, v
+
+
+@case
+def loft_skins_profiles_with_caps():
+    a, b = _circle(1, (0, 0, 0)), _circle(1, (0, 0, 2))
+    lo = api.create_loft([a, b], params={"Smooth": False})
+    open_edges, v = _closed_signed_volume(lo)
+    assert open_edges == 0 and abs(v - 6.23) < 0.05, (open_edges, v)  # closed, outward-facing cylinder
+    c = _circle(2, (0, 0, 1))
+    api.set_loft_profiles(lo, [a, c, b])  # bulge in the middle; settings kept
+    assert api.get_params(lo)["params"]["Smooth"]["value"] is False
+    assert _closed_signed_volume(lo)[1] > 10
+
+
+@case
+def loft_caps_profiles_in_any_plane():
+    tilt = (math.pi / 2, 0, 0)  # circles in the XZ plane, lofted along Y
+    lo = api.create_loft([_circle(1, (0, 0, 0), tilt), _circle(1, (0, 3, 0), tilt)], params={"Smooth": False})
+    open_edges, v = _closed_signed_volume(lo)
+    assert open_edges == 0 and abs(abs(v) - 3 * 3.115) < 0.08, (open_edges, v)
+
+
 @case
 def sweep_grows():
     bpy.ops.curve.primitive_bezier_curve_add()
