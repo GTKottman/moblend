@@ -7,7 +7,7 @@ list of modes/types and every naming convention lives here exactly once.
 import os
 import tempfile
 
-VERSION = "0.2.0"  # bl_info and blender_manifest.toml must match (Blender reads them as literals; a test checks)
+VERSION = "0.3.0"  # bl_info and blender_manifest.toml must match (Blender reads them as literals; a test checks)
 
 CLONER_MODES = ("linear", "radial", "grid", "honeycomb", "object", "spline")
 EFFECTOR_TYPES = ("plain", "random", "step", "noise", "wave", "time", "target", "delay", "inheritance", "sound",

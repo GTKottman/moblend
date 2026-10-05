@@ -3,23 +3,28 @@
 C4D-style MoGraph add-on for Blender 5.2 + stdio MCP server. Read README.md for the feature map.
 
 ## Layout
-- `moblend/catalog.py` — single source of truth for every mode/type list, custom-property keys, name prefixes
-  and the socket path. Pure Python: the MCP server loads it by path. Add new types here first.
-- `moblend/nodes/util.py` — node-building DSL (`B`, `new_group`, `ensure`, `geometry_group`). **Bump
-  `GROUP_VERSION` whenever any group's nodes or interface change**; stale groups are rebuilt (modifier values reset).
-- `moblend/nodes/core.py` — falloff field, `falloff_group` (shared scaffold of every effector and GN deformer),
-  apply, instancer, split_centered. `cloners/effectors/deformers/generators.py` hold `BUILDERS` tables whose
-  keys must match the catalog (a test enforces it).
-- `moblend/api/` — the API, by domain: `objects` (lookup, modifiers, wrappers, usage index), `params`
-  (`Param`, list/get/set), `cloner`, `effector`, `deformer`, `generator` (`GENERATORS` registry used by UI and
-  MCP), `material`, `scene`. `api/__init__` re-exports the public names.
-- Effectors and GN deformers: each object gets a wrapper group (`MBFX <name>` / `MBDF <name>`) with one node named
-  `Params` whose socket values are the shared parameters; stored in `obj["mb_group"]`.
-- `moblend/commands.py` — bridge commands: mostly `register(name, api_fn, aliases, describe)`; results go
-  through `_jsonable`. `bridge.py` — Unix socket server, runs commands on the main thread via a timer.
-- `mcp/moblend_mcp.py` — hand-rolled MCP over stdio (no deps); tool schemas use catalog enums.
-- Dev install: symlink `<blender config>/5.x/scripts/addons/moblend` → `moblend/` and enable it; register the
-  MCP server with `claude mcp add moblend -s user -- python3 <repo>/mcp/moblend_mcp.py`.
+- `moblend/catalog.py` — single source of truth for every mode/type/kind list, custom-property keys, name prefixes,
+  the version and the socket path. Pure Python: the MCP server loads it by path. Add new types here first.
+- `moblend/nodes/util.py` — node-building DSL (`B`, `new_group`, `ensure`, `geometry_group`, `geometry_socket`).
+  **Bump `GROUP_VERSION` whenever any group's nodes or interface change**; stale groups are rebuilt.
+- `moblend/nodes/core.py` — falloff field, `falloff_group` (effector / GN-deformer scaffold: strength, layers,
+  selection, min/max, memory), apply (+ Modify Clone, Deformation), instancer (Blend/Sort, per-clone data,
+  children bundle), split_centered, texture and sound helpers.
+- `moblend/nodes/{cloners,effectors,deformers,fields,generators}.py` — `BUILDERS` tables (keys must match the
+  catalog; a test enforces it). `nodes/formula.py` compiles safe math expressions to nodes.
+- `moblend/api/` — the API by domain: `objects` (lookup, modifiers, wrappers, usage index, link-preserving group
+  rebuild), `params` (`Param`, list/get/set, `PARAM_SOURCES` hooks for non-modifier settings), `cloner`,
+  `selection` (MoGraph Selection/Weight tags, Matrix), `effector` (incl. Formula, Group), `field`, `deformer`,
+  `generator` (MoText, Sweep, Volume, Fracture Objects, MoInstance, MoSpline, Spline Mask, Spline Wrap, ...),
+  `voronoi` (live Voronoi Fracture, settings in `object.moblend_voronoi`), `connectors`, `loft`, `turtle`,
+  `material` (Color, Multi, Beat), `scene` (list, delete, cache). `api/__init__` re-exports and registers.
+- Wrapper pattern: effectors, GN deformers, fields and lofts own a wrapper group (`MBFX`/`MBDF`/`MBFL`/`MBLF`)
+  with one node named `Params` holding their settings; field chains are layer nodes `MB Layer <i>` in owners.
+- `moblend/commands.py` — bridge commands (`register(name, api_fn, aliases, describe)`), `bridge.py` — Unix
+  socket server; `mcp/moblend_mcp.py` — stdio MCP server, schemas from catalog enums.
+- `docs/MOGRAPH_CHECKLIST.md` — Cinema 4D MoGraph feature checklist; keep it in sync with what ships.
+- Dev install: symlink `<blender config>/5.x/scripts/addons/moblend` → `moblend/`; MCP:
+  `claude mcp add moblend -s user -- python3 <repo>/mcp/moblend_mcp.py`.
 
 ## Standards
 - No builtin shadowing (`type`, `object`, `min`, `max`); the MCP's `type`/`object` args are aliased in commands.
@@ -36,6 +41,12 @@ C4D-style MoGraph add-on for Blender 5.2 + stdio MCP server. Read README.md for 
 - Render engine ids: `BLENDER_WORKBENCH`, `BLENDER_EEVEE`, `CYCLES`.
 - Collection Info "Reset Children" resets rotation/scale too; the instancer zeroes translation only.
 - Simulation zones work inside nested groups (Delay effector).
+- A vector socket `default_value` is a live view: copy it (`objects.socket_values`) before rebuilding a group,
+  or writing it back is a use-after-free crash. Rebuilding an interface also drops links to its sockets.
+- One menu group input must drive a single Menu Switch (several make the menu's items empty).
+- Extrude Mesh defaults to Individual; use `generators._solid` for closed extrusions.
+- Exact booleans dislike coplanar faces; Mesh Boolean Union/Intersect take every operand on multi-input
+  "Mesh 2" (its label changes, the identifier doesn't).
 
 ## Testing
 Run only the touched suite; each takes seconds (`blender -b --factory-startup -P tests/<suite>.py`, look for

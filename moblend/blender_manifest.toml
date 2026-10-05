@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "moblend"
-version = "0.2.0"
+version = "0.3.0"
 name = "MoBlend"
 tagline = "MoGraph-style cloners, effectors, fields and generators, drivable over MCP"
 maintainer = "MoBlend contributors"

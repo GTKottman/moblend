@@ -104,6 +104,8 @@ objs = {
     "volume": api.create_volume_builder(add=[_cube()]),
     "loft": api.create_loft([_curve(0), _curve(2)]),
     "field": api.add_field("Box", effectors=["R"]),
+    "turtle": api.create_mospline_turtle(),
+    "mospline": api.create_mospline(),
 }
 api.add_effector("plain", name="P2", cloners=["T"])
 expect = {"cloner": ["Count X", "Spacing", "Radius", "R"],
@@ -114,7 +116,9 @@ expect = {"cloner": ["Count X", "Spacing", "Radius", "R"],
                       "Glue", "Mode", "Colorize"],
           "volume": ["Voxel Size", "Smooth", "Add", "Subtract"],
           "loft": ["Points", "Rows", "Caps", "Profiles (in order)"],
-          "field": ["Blend", "Opacity", "Falloff", "R"]}
+          "field": ["Blend", "Opacity", "Falloff", "R"],
+          "turtle": ["Premise", "Rules", "Iterations"],
+          "mospline": ["Segments", "Steps", "Mode"]}
 for k, o in objs.items():
     try:
         log = draw(ui.MB_PT_main, o)

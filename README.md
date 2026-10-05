@@ -27,35 +27,21 @@ add-on works in any file you open.
 
 ## Features
 
-| Cinema 4D | MoBlend |
+MoBlend covers Cinema 4D's MoGraph module item by item. **[docs/MOGRAPH_CHECKLIST.md](docs/MOGRAPH_CHECKLIST.md)**
+compares every feature in Maxon's documentation with MoBlend: **71 implemented, 5 partial, 12 not applicable
+in Blender** (each with the Blender alternative), and nothing left as not started. Every implemented item has
+an automated test.
+
+| Area | What you get |
 |---|---|
-| Cloner: Linear / Radial / Grid (incl. Honeycomb) / Object / Spline | Cloner with the same modes. Clones iterate through children or pick randomly, and keep each child's rotation and scale |
-| Plain, Random, Step, Shader, Formula, Time, Target, Delay, Inheritance, Sound effectors | plain, random (random or noise mode), step, noise, wave, time, target, delay (blend or spring), inheritance (morph into another cloner), sound (each clone its own frequency band) |
-| Effector position/rotation/scale/color + fields | Same parameters. Falloff shapes: Infinite, Sphere, Box, Cylinder, Linear, Noise, Random, plus Inner and Invert |
-| Field lists | Field objects layered into effectors and deformers with Multiply / Max / Min / Add / Subtract blending and opacity; one field can drive many effectors |
-| MoGraph Selection | Per-effector index pattern: From, To, Every, Offset, Invert |
-| MoGraph color | Effector **Color** + **Color Mix**. The "MB MoGraph Color" material displays it |
-| MoText (character / word / line) | MoText: upright, extruded, split into pieces effectors can move |
-| Fracture (explode segments) | Fracture: by islands, or every polygon on its own |
-| Voronoi Fracture | Voronoi Fracture: exact convex cells (pieces, seed, gap) with an inside material; re-fracture any time |
-| Loft | Loft: smooth surface through ordered profile curves, with end caps |
-| Sweep (with growth) | Sweep: path + optional profile. Animate Start/End for growth, plus twist and end-scale taper |
-| Tracer (connect, trails) | Tracer: a tube through the clones, or tapering trails each clone leaves behind over time |
-| Volume Builder + Volume Mesher | Volume Builder: union of Add objects minus Subtract objects as one mesh (SDF grids), with Smooth, Fillet, Offset and Adaptivity |
-| Lathe, Extrude, Symmetry, Boole, Subdivision | Wrappers around Screw, Solidify/curve extrude, Mirror, Boolean, Subsurf |
-| Bend, Twist, Taper, Squash/Stretch | Simple Deform placed by an empty; angle/factor are on the empty |
-| Formula/Wave, Spherify, Shear, Bulge, Displacer | GN deformers that support the same falloff fields |
-
-### Roadmap (all shipped in 0.2)
-
-- [x] Voronoi Fracture (`voronoi`: exact convex cells, inner-face material, gap, re-fracture)
-- [x] Inheritance effector
-- [x] Sound effector (per-clone log-spaced frequency bands)
-- [x] Volume Builder (add/subtract sets, smooth, fillet, offset)
-- [x] Loft (ordered profiles, smooth rails, end caps in any plane)
-- [x] Tracer trails
-- [x] MoGraph Selection (index pattern: from / to / every / offset / invert)
-- [x] Layered field lists (Field objects with Multiply / Max / Min / Add / Subtract blending)
+| **Cloner** | Linear, Radial, Grid, Honeycomb, Object, Spline modes with their C4D options; Iterate / Random / Blend (morph) / Sort clones; Viewport Mode; Matrix object |
+| **Effectors** | Plain, Random, Step, Noise, Shader, Formula, Wave, Time, Target, Delay, Inheritance, Sound, Spline, Volume, Push Apart, Group / ReEffector. Common options: Strength, Min/Max, Visibility, Weight Transform, Modify Clone, Memory (Decay / Freeze / Ease), Deformation on plain meshes |
+| **Fields** | Linear, Radial, Spherical, Box, Cylinder, Cone, Capsule, Torus, Random, Noise, Shader, Sound, Formula, Time, Step, Object/Spline distance, Attribute, Group. Blend modes, opacity, contour, remap |
+| **Selection** | MoGraph Selection and Weightmap tags, a Pick Clones tool (Edit Mode), index patterns, Hide Selected |
+| **Voronoi Fracture** | Live re-fracture, point distributions, source objects, shader source, weightmap, offset/invert, hull only, scale cells, sorting, detailing, geometry glue, selection attributes, rigid-body connectors |
+| **Other objects** | Fracture (objects / islands / polygons), MoText (letters / words / lines, bevel), MoSpline (Simple / Spline / Turtle L-system), MoExtrude, MoInstance, Tracer (connect / trails), Spline Mask, Spline Wrap, Sweep, Loft, Volume Builder, Lathe, Extrude, Symmetry, Boole, Subdivision |
+| **Deformers** | Bend, Twist, Taper, Stretch, Wave, Spherify, Shear, Bulge, Displace (textures), all with falloffs and fields |
+| **Shaders & tools** | MoGraph Color, Multi, Beat; MoGraph Cache (bake) |
 
 ## Install
 

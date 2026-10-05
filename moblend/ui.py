@@ -625,6 +625,10 @@ class MB_PT_main(bpy.types.Panel):
     def generic(self, layout, o):
         if api.is_voronoi(o):
             self.voronoi(layout, o)
+        own = [p for p in api.list_params(o) if not p.group]  # settings stored on the object itself
+        if own:
+            box = _header(layout, o, "", "OUTLINER_OB_CURVE")
+            _draw_params(box, own)
         self.extra_modifiers(layout, o)
         if api.mb_kind(o) == Kind.LOFT:
             col = layout.box().column(align=True)
