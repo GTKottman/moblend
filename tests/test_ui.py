@@ -1,0 +1,128 @@
+"""Panel/menu draw code against a recording layout (no window needed).
+
+Run: blender -b --factory-startup -P tests/test_ui.py
+Checks every prop the panels draw resolves, and every operator id exists.
+"""
+
+import os
+import sys
+import traceback
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
+import bpy  # noqa: E402
+import moblend  # noqa: E402
+from moblend import api, ui  # noqa: E402
+
+
+class Rec:
+    def __init__(self, log):
+        self.log = log
+        self.use_property_split = self.use_property_decorate = False
+
+    def _child(self, *a, **k):
+        return Rec(self.log)
+
+    row = column = box = split = _child
+
+    def prop(self, holder, attr, text=None, **k):
+        if attr.startswith('["'):
+            assert attr[2:-2] in holder, f"missing idprop {attr} on {holder}"
+        else:
+            assert hasattr(holder, attr), f"{holder} has no {attr}"
+        self.log.append(("prop", text or attr))
+
+    def label(self, text="", **k):
+        self.log.append(("label", text))
+
+    def operator(self, idname, **k):
+        mod, op = idname.split(".")
+        assert hasattr(getattr(bpy.ops, mod), op), f"no operator {idname}"
+        self.log.append(("op", idname))
+        return type("Props", (), {})()
+
+    def menu(self, name, **k):
+        assert hasattr(bpy.types, name), f"no menu {name}"
+
+    def separator(self, **k):
+        pass
+
+
+class Ctx:
+    def __init__(self, o):
+        self.active_object = o
+        self.selected_objects = [o]
+        self.scene = bpy.context.scene
+
+
+def draw(panel, o):
+    log = []
+    self = type("P", (), {})()
+    self.layout = Rec(log)
+    for name in ("cloner", "effector", "deformer", "generic", "effector_list", "extra_modifiers"):
+        setattr(self, name, getattr(ui.MB_PT_main, name).__get__(self))
+    panel.draw(self, Ctx(o))
+    return log
+
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+moblend.register()
+fails = []
+c = api.create_cloner("grid", name="G", location=(0, 0, 0))
+api.add_tracer(c.name)
+objs = {
+    "cloner": c,
+    "effector": api.add_effector("random", name="R", cloners=[c.name]),
+    "deformer": api.add_deformer("wave", name="W", targets=[c.name]),
+    "simple": api.add_deformer("bend", name="B"),
+    "motext": api.create_motext("HI", name="T"),
+}
+api.add_effector("plain", name="P2", cloners=["T"])
+expect = {"cloner": ["Count X", "Spacing", "Radius", "R"], "effector": ["Strength", "Falloff", "Seed", "Mode"],
+          "deformer": ["Amplitude", "Falloff"], "simple": ["Angle"], "motext": ["Text", "Split", "P2"]}
+for k, o in objs.items():
+    try:
+        log = draw(ui.MB_PT_main, o)
+        shown = {t for _, t in log}
+        missing = [e for e in expect[k] if e not in shown]
+        assert not missing, f"{k}: not drawn {missing}; drew {sorted(shown)}"
+        print("PASS panel", k, len(log), "items")
+    except Exception:
+        fails.append(k)
+        traceback.print_exc()
+for menu in (ui.MB_MT_add, ui.MB_MT_cloners, ui.MB_MT_effectors, ui.MB_MT_deformers, ui.MB_MT_generators):
+    try:
+        self = type("M", (), {})()
+        self.layout = Rec([])
+        menu.draw(self, Ctx(None))
+        print("PASS menu", menu.__name__)
+    except Exception:
+        fails.append(menu.__name__)
+        traceback.print_exc()
+try:
+    self = type("P", (), {})()
+    self.layout = Rec([])
+    ui.MB_PT_bridge.draw(self, Ctx(None))
+    print("PASS bridge panel")
+except Exception:
+    fails.append("bridge")
+    traceback.print_exc()
+
+# Operators run for real.
+bpy.ops.wm.read_factory_settings(use_empty=True)
+try:
+    bpy.ops.mesh.primitive_cube_add()
+    assert bpy.ops.moblend.add_cloner(mode="radial") == {"FINISHED"}
+    cl = bpy.context.active_object
+    assert api.mb_kind(cl) == "cloner"
+    assert bpy.ops.moblend.add_effector(type="plain") == {"FINISHED"}  # cloner selected -> linked
+    assert len(api.effectors_of(cl)) == 1
+    bpy.context.view_layer.objects.active = cl
+    cl.select_set(True)
+    assert bpy.ops.moblend.cloner_mode(mode="grid") == {"FINISHED"}
+    assert bpy.ops.moblend.add_generator(kind="motext") == {"FINISHED"}
+    print("PASS operators")
+except Exception:
+    fails.append("operators")
+    traceback.print_exc()
+print("RESULT", "PASS" if not fails else f"FAIL {fails}")

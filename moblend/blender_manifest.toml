@@ -1,0 +1,16 @@
+schema_version = "1.0.0"
+
+id = "moblend"
+version = "0.1.0"
+name = "MoBlend"
+tagline = "MoGraph-style cloners, effectors, fields and generators, drivable over MCP"
+maintainer = "MoBlend contributors"
+website = "https://github.com/GTKottman/moblend"
+type = "add-on"
+blender_version_min = "5.0.0"
+license = ["SPDX:GPL-3.0-or-later"]
+tags = ["Animation", "Geometry Nodes", "Object"]
+
+[permissions]
+files = "Writes preview renders to the temp folder"
+network = "Local Unix socket for the MCP bridge (no network ports)"

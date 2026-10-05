@@ -1,0 +1,58 @@
+"""Names shared by the add-on and the MCP server.
+
+Pure Python (no bpy), so mcp/moblend_mcp.py can load it outside Blender. Every
+list of modes/types and every naming convention lives here exactly once.
+"""
+
+import os
+import tempfile
+
+CLONER_MODES = ("linear", "radial", "grid", "object", "spline")
+EFFECTOR_TYPES = ("plain", "random", "step", "noise", "wave", "time", "target", "delay")
+FALLOFF_SHAPES = ("Infinite", "Sphere", "Box", "Cylinder", "Linear", "Noise", "Random")
+SIMPLE_DEFORMERS = {"bend": "BEND", "twist": "TWIST", "taper": "TAPER", "stretch": "STRETCH"}
+GN_DEFORMERS = ("wave", "spherify", "shear", "bulge", "displace")
+DEFORMER_TYPES = tuple(SIMPLE_DEFORMERS) + GN_DEFORMERS
+GENERATOR_KINDS = ("fracture", "tracer", "lathe", "extrude", "symmetry", "boole", "subdivision")
+PRIMITIVES = ("cube", "sphere", "icosphere", "cylinder", "cone", "torus", "plane", "monkey",
+              "circle_curve", "bezier_curve", "spiral_curve")
+AXES = ("X", "Y", "Z")
+
+
+class Kind:
+    """Values of the KEY_KIND custom property on MoBlend objects."""
+    CLONER = "cloner"
+    EFFECTOR = "effector"
+    DEFORMER = "deformer"              # Geometry Nodes deformer (has a wrapper group)
+    SIMPLE_DEFORMER = "simple_deformer"  # Blender Simple Deform driven by the empty
+    MOTEXT = "motext"
+    SWEEP = "sweep"
+    FRACTURE = "fracture"
+
+
+# Custom properties stored on objects.
+KEY_KIND = "mb_kind"
+KEY_TYPE = "mb_type"
+KEY_GROUP = "mb_group"    # wrapper node group of an effector / GN deformer
+KEY_CLONES = "mb_clones"  # a cloner's source collection
+KEY_AXIS = "mb_axis"      # simple deformer axis
+KEY_VERSION = "mb_version"
+
+# Node group and modifier names.
+GROUP_PREFIX = "MB "              # shared, generated node groups ("MB Falloff", ...)
+EFFECTOR_GROUP_PREFIX = "MBFX "   # one wrapper per effector object
+DEFORMER_GROUP_PREFIX = "MBDF "   # one wrapper per GN deformer object
+EFFECTOR_MOD_PREFIX = "MBE "      # an effector's modifier on a target
+DEFORMER_MOD_PREFIX = "MBD "      # a deformer's modifier on a target
+CLONER_MOD = "MB Cloner"
+PARAMS_NODE = "Params"            # node inside a wrapper whose inputs are the parameters
+
+COLOR_ATTR = "mb_color"           # per-clone color written by effectors
+COLOR_MATERIAL = "MB MoGraph Color"
+SOURCES_COLLECTION = "MoBlend Sources"
+
+
+def socket_path():
+    """Unix socket the bridge listens on (a file, never a network port)."""
+    return os.environ.get("MOBLEND_SOCKET") or os.path.join(
+        os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir(), "moblend.sock")
