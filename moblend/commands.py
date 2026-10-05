@@ -53,6 +53,8 @@ register("add_deformer", api.add_deformer, {"type": "deformer_type"}, describe=T
 register("attach_deformer", api.attach_deformer)
 register("create_motext", api.create_motext, describe=True)
 register("create_sweep", api.create_sweep, describe=True)
+register("create_volume_builder", api.create_volume_builder, describe=True)
+register("add_volume_objects", api.add_volume_objects, {"builder": "ref"})
 register("get_params", api.get_params, OBJ)
 register("set_params", api.set_params, {**OBJ, "params": "values"})
 register("set_color_material", api.set_color_material)
@@ -202,7 +204,9 @@ def _scene_bounds():
     hi = Vector((-math.inf,) * 3)
     for inst in dg.object_instances:
         ob = inst.object
-        if ob.type not in ("MESH", "CURVE", "FONT") or not ob.visible_get():
+        # Evaluated copies never report visible, so ask the original. Clones count even though their
+        # source objects live in a hidden collection.
+        if ob.type not in ("MESH", "CURVE", "FONT") or not (inst.is_instance or ob.original.visible_get()):
             continue
         m = inst.matrix_world
         for corner in ob.bound_box:

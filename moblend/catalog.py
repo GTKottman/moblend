@@ -28,6 +28,7 @@ class Kind:
     MOTEXT = "motext"
     SWEEP = "sweep"
     FRACTURE = "fracture"
+    VOLUME = "volume"
 
 
 # Custom properties stored on objects.
@@ -35,6 +36,7 @@ KEY_KIND = "mb_kind"
 KEY_TYPE = "mb_type"
 KEY_GROUP = "mb_group"    # wrapper node group of an effector / GN deformer
 KEY_CLONES = "mb_clones"  # a cloner's source collection
+KEY_VOLUME_SETS = {"add": "mb_volume_add", "subtract": "mb_volume_subtract"}  # a volume builder's collections
 KEY_AXIS = "mb_axis"      # simple deformer axis
 KEY_VERSION = "mb_version"
 KEY_SOURCE = "mb_source"  # original mesh kept by Voronoi Fracture for re-fracturing

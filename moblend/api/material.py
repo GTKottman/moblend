@@ -4,7 +4,7 @@ import bpy
 
 from ..catalog import COLOR_ATTR, COLOR_MATERIAL, KEY_CLONES, Kind
 from .objects import get_objects, mb_kind
-from .params import parse_color, set_params
+from .params import list_params, parse_color, set_params
 
 
 def _principled(mat):
@@ -42,14 +42,14 @@ def solid_material(color, metallic=0.0, roughness=0.4, emission=0.0, name=None):
 
 
 def assign(objects, mat):
-    """Assign `mat` to objects; a cloner means its clones, MoText its Material input. O(objects)."""
+    """Assign `mat` to objects. A cloner means its clones; a generator with a Material input (MoText,
+    Sweep, Volume Builder, Tracer) gets it there, because that input overrides the mesh's slots. O(objects)."""
     done = []
     for o in get_objects(objects):
-        k = mb_kind(o)
-        if k == Kind.CLONER:
+        if mb_kind(o) == Kind.CLONER:
             done += assign(list(o[KEY_CLONES].objects), mat)
             continue
-        if k == Kind.MOTEXT:
+        if any(p.name == "Material" for p in list_params(o)):
             set_params(o, {"Material": mat.name})
         elif getattr(o.data, "materials", None) is not None:
             o.data.materials.clear()

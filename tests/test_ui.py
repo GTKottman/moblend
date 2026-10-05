@@ -93,11 +93,13 @@ objs = {
     "simple": api.add_deformer("bend", name="B"),
     "motext": api.create_motext("HI", name="T"),
     "voronoi": api.voronoi_fracture(api.get_object(c.name) and _cube(), pieces=4),
+    "volume": api.create_volume_builder(add=[_cube()]),
 }
 api.add_effector("plain", name="P2", cloners=["T"])
 expect = {"cloner": ["Count X", "Spacing", "Radius", "R"], "effector": ["Strength", "Falloff", "Seed", "Mode"],
           "deformer": ["Amplitude", "Falloff"], "simple": ["Angle"], "motext": ["Text", "Split", "P2"],
-          "voronoi": ["Pieces", "Seed", "Gap", "Mode"]}
+          "voronoi": ["Pieces", "Seed", "Gap", "Mode"],
+          "volume": ["Voxel Size", "Smooth", "Add", "Subtract"]}
 for k, o in objs.items():
     try:
         log = draw(ui.MB_PT_main, o)
@@ -142,6 +144,13 @@ try:
     bpy.ops.mesh.primitive_cube_add()
     assert bpy.ops.moblend.voronoi(pieces=5) == {"FINISHED"}
     assert bpy.context.active_object["Voronoi Pieces"] == 5
+    assert bpy.ops.moblend.volume_builder() == {"FINISHED"}
+    vb = bpy.context.active_object
+    bpy.ops.mesh.primitive_cube_add(location=(0, 3, 0))
+    vb.select_set(True)
+    bpy.context.view_layer.objects.active = vb
+    assert bpy.ops.moblend.volume_members(mode="subtract") == {"FINISHED"}
+    assert len(vb["mb_volume_subtract"].objects) == 1
     print("PASS operators")
 except Exception:
     fails.append("operators")

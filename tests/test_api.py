@@ -317,13 +317,25 @@ def fracture_islands_and_polygons():
     assert len(instances(a)) == 12
 
 
-def _volume(o):
+def _mesh_volume(mesh):
     import bmesh
     bm = bmesh.new()
-    bm.from_mesh(o.data)
+    bm.from_mesh(mesh)
     v = bm.calc_volume()
     bm.free()
     return v
+
+
+def _volume(o):
+    return _mesh_volume(o.data)
+
+
+def _evaluated_volume(o):
+    ev = o.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    try:
+        return _mesh_volume(ev.to_mesh())
+    finally:
+        ev.to_mesh_clear()
 
 
 @case
@@ -343,6 +355,19 @@ def voronoi_fracture_conserves_volume_and_refractures():
                                                                                    "Local Space": False})
     after = [x.translation.z for x in instances(cube)]
     assert all(abs(a - b - 1.0) < 1e-4 for a, b in zip(after, before, strict=True)) and e
+
+
+@case
+def volume_builder_unions_and_subtracts():
+    bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0, 0))
+    a = bpy.context.object
+    bpy.ops.mesh.primitive_cube_add(size=2, location=(1, 0, 0))
+    b = bpy.context.object
+    v = api.create_volume_builder(add=[a, b], params={"Voxel Size": 0.04})
+    assert abs(_evaluated_volume(v) - 12.0) < 0.15, _evaluated_volume(v)  # overlap counted once
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(1.5, 0, 0))
+    api.add_volume_objects(v, [bpy.context.object], "subtract")
+    assert abs(_evaluated_volume(v) - 11.0) < 0.15, _evaluated_volume(v)  # cutter (1 m³) lies fully inside
 
 
 @case
@@ -399,6 +424,15 @@ def keyframes_and_angles():
     api.set_params(e, {"Strength": 0}, frame=1)
     api.set_params(e, {"Strength": 1, "location": [0, 0, 2]}, frame=10)
     assert e["mb_group"].animation_data and e["mb_group"].animation_data.action
+
+
+@case
+def camera_frames_what_is_visible():
+    from moblend import commands
+    bpy.ops.mesh.primitive_cube_add(size=2, location=(10, 0, 0))
+    api.create_cloner("linear", objects=[bpy.context.object], params={"Count": 2, "Offset": [0, 0, 4]})
+    center, radius = commands._scene_bounds()  # clones span z -1..5 (source hidden, clones counted)
+    assert near(center, (10, 0, 2), 0.01) and abs(radius - (4 + 4 + 36) ** 0.5 / 2) < 0.01, (center, radius)
 
 
 @case

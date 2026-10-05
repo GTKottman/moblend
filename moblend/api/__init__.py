@@ -12,7 +12,8 @@ from .cloner import add_clone_objects, create_cloner, set_cloner_mode  # noqa: F
 from .effector import add_effector, effectors_of, link_effector, move_effector, unlink_effector  # noqa: F401
 from .deformer import add_deformer, attach_deformer  # noqa: F401
 from .generator import (add_boole, add_extrude, add_fracture, add_lathe, add_subdivision,  # noqa: F401
-                        add_symmetry, add_tracer, create_motext, create_sweep)
+                        add_symmetry, add_tracer, add_volume_objects, create_motext, create_sweep,
+                        create_volume_builder)
 from .voronoi import SETTINGS as VORONOI_SETTINGS, voronoi_fracture  # noqa: F401
 from .scene import delete, evaluated_stats, list_mograph  # noqa: F401
 

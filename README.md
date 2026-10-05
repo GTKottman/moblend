@@ -38,6 +38,7 @@ add-on works in any file you open.
 | Voronoi Fracture | Voronoi Fracture: exact convex cells (pieces, seed, gap) with an inside material; re-fracture any time |
 | Sweep (with growth) | Sweep: path + optional profile. Animate Start/End for growth, plus twist and end-scale taper |
 | Tracer (connect) | Tracer: a tube through the clones |
+| Volume Builder + Volume Mesher | Volume Builder: union of Add objects minus Subtract objects as one mesh (SDF grids), with Smooth, Fillet, Offset and Adaptivity |
 | Lathe, Extrude, Symmetry, Boole, Subdivision | Wrappers around Screw, Solidify/curve extrude, Mirror, Boolean, Subsurf |
 | Bend, Twist, Taper, Squash/Stretch | Simple Deform placed by an empty; angle/factor are on the empty |
 | Formula/Wave, Spherify, Shear, Bulge, Displacer | GN deformers that support the same falloff fields |
@@ -47,7 +48,7 @@ add-on works in any file you open.
 - [x] Voronoi Fracture (`voronoi`: exact convex cells, inner-face material, gap, re-fracture)
 - [x] Inheritance effector
 - [x] Sound effector (per-clone log-spaced frequency bands)
-- [ ] Volume Builder
+- [x] Volume Builder (add/subtract sets, smooth, fillet, offset)
 - [ ] Loft
 - [ ] Tracer trails
 - [ ] MoGraph Selection

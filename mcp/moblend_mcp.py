@@ -119,6 +119,14 @@ TOOLS = [
          "Sweep a profile along a path curve (circle profile by default). Params: Radius, Sides, Start, End "
          "(animate for growth), Twist, End Scale (taper), Path Resolution, Fill Caps, Material.",
          {"path": OBJ, "profile": OBJ, "name": STR, "params": PARAMS}, ["path"]),
+    tool("create_volume_builder",
+         "Volume Builder: one smooth mesh from the union of `add` objects minus `subtract` objects (they are "
+         "hidden like cloner children and keep their positions). Params: Voxel Size (smaller = finer, slower), "
+         "Smooth, Fillet, Offset, Adaptivity, Material.",
+         {"add": names("Objects to merge"), "subtract": names("Objects to carve out"), "name": STR,
+          "params": PARAMS}, ["add"]),
+    tool("add_volume_objects", "Move more objects into a Volume Builder's add or subtract set.",
+         {"builder": OBJ, "objects": names(), "mode": enum(("add", "subtract"))}, ["builder", "objects"]),
     tool("add_generator",
          "Add a generator to an object: fracture (mode Islands|Polygons: pieces become effectable), voronoi "
          "(pieces, seed, gap 0..0.9: convex Voronoi chunks, inner faces get an Inside material; call again to "

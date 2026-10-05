@@ -5,7 +5,7 @@ from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
 
 from . import api, bridge
 from .catalog import (CLONER_MOD, CLONER_MODES, DEFORMER_TYPES, EFFECTOR_TYPES, GROUP_PREFIX, KEY_CLONES,
-                      KEY_TYPE, KEY_VERSION, Kind)
+                      KEY_TYPE, KEY_VERSION, KEY_VOLUME_SETS, Kind)
 from .nodes import build_all
 from .nodes.core import FALLOFF_NAMES
 
@@ -22,11 +22,12 @@ GENERATOR_MENU = (("motext", "MoText", "FONT_DATA"), ("sweep", "Sweep (active cu
                   ("fracture", "Fracture (active)", "MOD_EDGESPLIT"),
                   ("voronoi", "Voronoi Fracture (active)", "MOD_EXPLODE"),
                   ("tracer", "Tracer (active cloner)", "CURVE_DATA"),
+                  ("volume", "Volume Builder (selected)", "MOD_REMESH"),
                   None,
                   ("lathe", "Lathe", "MOD_SCREW"), ("extrude", "Extrude", "MOD_SOLIDIFY"),
                   ("symmetry", "Symmetry", "MOD_MIRROR"), ("boole", "Boole (cut active)", "MOD_BOOLEAN"),
                   ("subdivision", "Subdivision", "MOD_SUBSURF"))
-GENERATOR_OPERATORS = {"voronoi": "moblend.voronoi"}
+GENERATOR_OPERATORS = {"voronoi": "moblend.voronoi", "volume": "moblend.volume_builder"}
 EFFECTABLE = (Kind.CLONER, Kind.MOTEXT, Kind.FRACTURE)
 OWNERS = (Kind.EFFECTOR, Kind.DEFORMER, Kind.SIMPLE_DEFORMER)
 
@@ -141,6 +142,33 @@ class MB_OT_voronoi(_MBOperator):
         if not o or o.type != "MESH":
             return self.fail("Select a mesh first")
         return api.voronoi_fracture(o, self.pieces, self.seed, self.gap)
+
+
+def _selected_meshes(ctx, exclude=None):
+    return [o for o in ctx.selected_objects if o.type == "MESH" and o != exclude and not api.mb_kind(o)]
+
+
+class MB_OT_volume_builder(_MBOperator):
+    """Merge the selected meshes into one smooth volume mesh (C4D Volume Builder)"""
+    bl_idname = "moblend.volume_builder"
+    bl_label = "Volume Builder"
+
+    def run(self, ctx):
+        return api.create_volume_builder(add=_selected_meshes(ctx))
+
+
+class MB_OT_volume_members(_MBOperator):
+    """Move the selected meshes into the active Volume Builder's Add or Subtract set"""
+    bl_idname = "moblend.volume_members"
+    bl_label = "Add to Volume"
+    mode: EnumProperty(items=_enum(KEY_VOLUME_SETS))
+
+    def run(self, ctx):
+        o = ctx.active_object
+        objs = _selected_meshes(ctx, exclude=o)
+        if not objs:
+            return self.fail("Select meshes, then the Volume Builder last (active)")
+        return api.add_volume_objects(o, objs, self.mode)
 
 
 class MB_OT_cloner_mode(_MBOperator):
@@ -381,6 +409,14 @@ class MB_PT_main(bpy.types.Panel):
             _op(box, "moblend.voronoi", "FILE_REFRESH", text="Re-fracture",
                 **{arg: o[key] for arg, key in api.VORONOI_SETTINGS.items()})
         self.extra_modifiers(layout, o)
+        if api.mb_kind(o) == Kind.VOLUME:
+            box = layout.box()
+            for mode, key in KEY_VOLUME_SETS.items():
+                col = box.column(align=True)
+                col.label(text=mode.title(), icon="ADD" if mode == "add" else "REMOVE")
+                for x in o[key].objects:
+                    col.label(text=x.name, icon="OBJECT_DATA")
+                _op(col, "moblend.volume_members", "IMPORT", text=f"{mode.title()} Selected", mode=mode)
         if _effectable(o):
             self.effector_list(layout, o)
 
@@ -413,6 +449,7 @@ class MB_Prefs(bpy.types.AddonPreferences):
 
 
 CLASSES = (MB_OT_add_cloner, MB_OT_add_effector, MB_OT_add_deformer, MB_OT_add_generator, MB_OT_voronoi,
+           MB_OT_volume_builder, MB_OT_volume_members,
            MB_OT_cloner_mode,
            MB_OT_link, MB_OT_move_effector, MB_OT_color_material, MB_OT_bridge, MB_OT_rebuild,
            MB_MT_cloners, MB_MT_effectors, MB_MT_deformers, MB_MT_generators, MB_MT_add,

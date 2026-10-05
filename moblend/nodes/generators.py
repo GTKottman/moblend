@@ -1,4 +1,4 @@
-"""Generators: MoText, Sweep, Fracture, Tracer (each O(output elements))."""
+"""Generators: MoText, Sweep, Fracture, Tracer, Volume Builder (each O(output elements) unless noted)."""
 
 import math
 
@@ -76,6 +76,37 @@ def _tracer(b, g):
     return b.join(b.switch("GEOMETRY", g["Keep Clones"], None, g["Geometry"]), tube)
 
 
+def _volume(b, g):
+    """Union of the Add collection minus the Subtract collection, as one smooth mesh.
+
+    O(voxels): grid resolution ~ (extent / Voxel Size)^2 in the narrow band around surfaces.
+    """
+    def mesh_of(collection):
+        geo = b.node("GeometryNodeCollectionInfo", {"Collection": collection}, transform_space="RELATIVE")
+        return b.node("GeometryNodeRealizeInstances", {"Geometry": out(geo)}).outputs[0]
+
+    # Smoothing/fillet passes eat into the narrow band; widen it so the surface never tears.
+    band = b.math("ADD", b.math("ADD", g["Smooth"], g["Fillet"]), 3.0)
+
+    def sdf(mesh):
+        return b.node("GeometryNodeMeshToSDFGrid", {"Mesh": mesh, "Voxel Size": g["Voxel Size"],
+                                                    "Band Width": band}).outputs[0]
+
+    added, cutters = sdf(mesh_of(g["Add"])), mesh_of(g["Subtract"])
+    carved = b.node("GeometryNodeSDFGridBoolean", {"Grid 1": added, "Grid 2": sdf(cutters)},
+                    operation="DIFFERENCE").outputs[0]
+    # A difference with an empty grid erases everything, so only carve when there are cutters.
+    faces = out(b.node("GeometryNodeAttributeDomainSize", {"Geometry": cutters}, component="MESH"), "Face Count")
+    grid = b.switch("FLOAT", b.math("GREATER_THAN", faces, 0.0), added, carved)
+    grid = b.node("GeometryNodeSDFGridMean", {"Grid": grid, "Width": 1, "Iterations": g["Smooth"]}).outputs[0]
+    grid = b.node("GeometryNodeSDFGridFillet", {"Grid": grid, "Iterations": g["Fillet"]}).outputs[0]
+    grid = b.node("GeometryNodeSDFGridOffset", {"Grid": grid, "Distance": g["Offset"]}).outputs[0]
+    mesh = b.node("GeometryNodeGridToMesh", {"Grid": grid, "Threshold": 0.0, "Adaptivity": g["Adaptivity"]}
+                  ).outputs[0]
+    mesh = b.node("GeometryNodeSetShadeSmooth", {"Geometry": mesh}).outputs[0]
+    return b.node("GeometryNodeSetMaterial", {"Geometry": mesh, "Material": g["Material"]}).outputs[0]
+
+
 BUILDERS = {
     "motext": geometry_group("MB MoText", [
         S("Text", "STRING", "MOBLEND"),
@@ -104,6 +135,16 @@ BUILDERS = {
     "fracture": geometry_group("MB Fracture", [
         S("Mode", "MENU", desc="Islands: each loose part. Polygons: every face flies alone"),
     ], _fracture, {"Mode": "Islands"}),
+    "volume": geometry_group("MB Volume Builder", [
+        S("Add", "COLLECTION", desc="Objects merged into the volume"),
+        S("Subtract", "COLLECTION", desc="Objects carved out of it"),
+        S("Voxel Size", "FLOAT", 0.05, 0.002, subtype="DISTANCE", desc="Smaller = more detail, slower"),
+        S("Smooth", "INT", 0, 0, 50, desc="Mean-filter passes (soft blending)"),
+        S("Fillet", "INT", 0, 0, 50, desc="Rounds concave creases"),
+        S("Offset", "FLOAT", 0.0, subtype="DISTANCE", desc="Grow (+) or shrink (-) the surface"),
+        S("Adaptivity", "FLOAT", 0.0, 0.0, 1.0, "FACTOR", "Fewer polygons on flat areas"),
+        S("Material", "MATERIAL"),
+    ], _volume),
     "tracer": geometry_group("MB Tracer", [
         S("Radius", "FLOAT", 0.04, 0.0, subtype="DISTANCE"),
         S("Sides", "INT", 8, 3, 128),
