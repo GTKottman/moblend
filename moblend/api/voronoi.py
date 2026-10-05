@@ -30,7 +30,7 @@ from ..catalog import KEY_KIND, KEY_SOURCE, Kind
 from .generator import MOD_NAMES, add_fracture
 from .material import solid_material
 from .objects import get_object
-from .params import set_params
+from .params import PARAM_SOURCES, rna_params, set_params
 
 INSIDE_MATERIAL = "MB Fracture Inside"
 SEED_ATTEMPTS_PER_PIECE = 200
@@ -149,11 +149,13 @@ def unregister():
     bpy.utils.unregister_class(MB_VoronoiSettings)
 
 
+def _voronoi_params(o):
+    return rna_params(o.moblend_voronoi, "Voronoi", refresh)
+
+
 def _register_params():
-    from .params import RNA_SOURCES
-    entry = (is_voronoi, lambda o: o.moblend_voronoi, "Voronoi", refresh)
-    if not any(e[2] == "Voronoi" for e in RNA_SOURCES):
-        RNA_SOURCES.append(entry)
+    if not any(make is _voronoi_params for _, make in PARAM_SOURCES):
+        PARAM_SOURCES.append((is_voronoi, _voronoi_params))
 
 
 def is_voronoi(o):

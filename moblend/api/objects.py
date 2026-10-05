@@ -3,6 +3,8 @@
 N = objects in the file, M = modifiers per object.
 """
 
+import contextlib
+
 import bpy
 
 from ..catalog import (GROUP_PREFIX, KEY_GROUP, KEY_KIND, PARAMS_NODE, SOURCES_COLLECTION)
@@ -73,7 +75,8 @@ def select_only(o):
     if vl is None:
         return
     for x in vl.objects.selected:
-        x.select_set(False)
+        if x is not None:  # a just-deleted object can linger in the selection
+            x.select_set(False)
     if o.name in vl.objects:
         o.select_set(True)
         vl.objects.active = o
@@ -206,3 +209,41 @@ def make_wrapper(prefix, owner, type_group, realize=False):
     links.new(params.outputs[0], gout.inputs[0])
     gin.location, info.location, params.location, gout.location = (-400, 0), (-400, -200), (0, 0), (300, 0)
     return ng
+
+
+def socket_values(node):
+    """Unlinked input values as plain Python copies. A vector default_value is a live view into socket
+    memory, which rebuilding the group frees; keeping the view and writing it back later crashes Blender."""
+    values = {}
+    for s in node.inputs:
+        if hasattr(s, "default_value") and not s.is_linked:
+            v = s.default_value
+            values[s.name] = tuple(v) if hasattr(v, "__len__") and not isinstance(v, str) else v
+    return values
+
+
+def restore_socket_values(node, values):
+    for s in node.inputs:
+        if s.name in values and not s.is_linked:
+            with contextlib.suppress(TypeError, ValueError):  # a socket whose type changed keeps its new default
+                s.default_value = values[s.name]
+
+
+def rebuild_params_group(owner, build):
+    """Replace the node group of the owner wrapper's Params node with `build()` (often the same group rebuilt
+    in place), keeping its links and input values: rebuilding an interface drops every link to its sockets.
+    O(sockets)."""
+    ng = owner[KEY_GROUP]
+    params = ng.nodes[PARAMS_NODE]
+    incoming = [(link.from_socket, link.to_socket.name) for link in ng.links if link.to_node == params]
+    outgoing = [(link.from_socket.name, link.to_socket) for link in ng.links if link.from_node == params]
+    values = socket_values(params)
+    params.node_tree = build()
+    for from_socket, name in incoming:
+        if name in params.inputs:
+            ng.links.new(from_socket, params.inputs[name])
+    for name, to_socket in outgoing:
+        if name in params.outputs:
+            ng.links.new(params.outputs[name], to_socket)
+    restore_socket_values(params, values)
+    owner.update_tag()

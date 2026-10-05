@@ -4,7 +4,7 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
 
 from . import api, bridge
-from .catalog import (CLONER_MOD, CLONER_MODES, DEFORMER_TYPES, EFFECTOR_TYPES, FALLOFF_SHAPES, GROUP_PREFIX,
+from .catalog import (CLONER_MOD, CLONER_MODES, DEFORMER_TYPES, EFFECTOR_TYPES, FIELD_KINDS, GROUP_PREFIX,
                       KEY_CLONES,
                       KEY_PROFILES, KEY_TYPE, KEY_VERSION, KEY_VOLUME_SETS, Kind)
 from .nodes import build_all
@@ -14,7 +14,9 @@ CLONER_ICONS = {"linear": "IPO_LINEAR", "radial": "MESH_CIRCLE", "grid": "MESH_G
                 "object": "MESH_ICOSPHERE", "spline": "CURVE_BEZCURVE"}
 EFFECTOR_ICONS = {"plain": "EMPTY_AXIS", "random": "RNDCURVE", "step": "IPO_CONSTANT", "noise": "FORCE_TURBULENCE",
                   "wave": "FORCE_HARMONIC", "time": "TIME", "target": "TRACKER", "delay": "FORCE_DRAG",
-                  "inheritance": "MOD_DATA_TRANSFER", "sound": "SPEAKER"}
+                  "inheritance": "MOD_DATA_TRANSFER", "sound": "SPEAKER", "formula": "DRIVER_TRANSFORM",
+                  "shader": "TEXTURE", "spline": "CURVE_BEZCURVE", "volume": "MESH_CUBE",
+                  "push_apart": "FULLSCREEN_EXIT"}
 DEFORMER_ICONS = {"bend": "MOD_SIMPLEDEFORM", "twist": "MOD_SCREW", "taper": "MOD_SIMPLEDEFORM",
                   "stretch": "MOD_SIMPLEDEFORM", "wave": "MOD_WAVE", "spherify": "MESH_UVSPHERE",
                   "shear": "MOD_LATTICE", "bulge": "MOD_CAST", "displace": "MOD_DISPLACE"}
@@ -30,9 +32,11 @@ GENERATOR_MENU = (("motext", "MoText", "FONT_DATA"), ("sweep", "Sweep (active cu
                   ("symmetry", "Symmetry", "MOD_MIRROR"), ("boole", "Boole (cut active)", "MOD_BOOLEAN"),
                   ("subdivision", "Subdivision", "MOD_SUBSURF"))
 GENERATOR_OPERATORS = {"voronoi": "moblend.voronoi", "volume": "moblend.volume_builder", "loft": "moblend.loft"}
-FIELD_ICONS = {"Infinite": "WORLD", "Sphere": "SPHERE", "Box": "CUBE", "Cylinder": "MESH_CYLINDER",
-               "Linear": "IPO_LINEAR", "Noise": "FORCE_TURBULENCE", "Random": "RNDCURVE"}
-FIELD_SHAPES = tuple(s for s in FALLOFF_SHAPES if s != "Infinite")
+FIELD_ICONS = {"Infinite": "WORLD", "Solid": "WORLD", "Group": "OUTLINER_COLLECTION", "Sphere": "SPHERE",
+               "Box": "CUBE", "Cylinder": "MESH_CYLINDER", "Cone": "MESH_CONE", "Capsule": "MESH_CAPSULE",
+               "Torus": "MESH_TORUS", "Linear": "IPO_LINEAR", "Radial": "DRIVER_ROTATIONAL_DIFFERENCE",
+               "Noise": "FORCE_TURBULENCE", "Random": "RNDCURVE", "Time": "TIME", "Step": "IPO_CONSTANT",
+               "Object": "OBJECT_DATA", "Shader": "TEXTURE", "Sound": "SPEAKER", "Formula": "DRIVER_TRANSFORM"}
 LAYERED = (Kind.EFFECTOR, Kind.DEFORMER)
 EFFECTABLE = (Kind.CLONER, Kind.MOTEXT, Kind.FRACTURE)
 OWNERS = (Kind.EFFECTOR, Kind.DEFORMER, Kind.SIMPLE_DEFORMER)
@@ -199,11 +203,23 @@ class MB_OT_add_field(_MBOperator):
     """Add a field; it joins the field list of every selected effector / GN deformer"""
     bl_idname = "moblend.add_field"
     bl_label = "Add Field"
-    shape: EnumProperty(items=[(s, s, "") for s in FIELD_SHAPES])
+    shape: EnumProperty(items=[(s, s, "") for s in FIELD_KINDS])
 
     def run(self, ctx):
         owners = [o for o in ctx.selected_objects if api.mb_kind(o) in LAYERED]
         return api.add_field(self.shape, owners, location=ctx.scene.cursor.location.copy())
+
+
+class MB_OT_group_effector(_MBOperator):
+    """Group the selected effectors under one Strength / falloff (C4D Group effector, ReEffector)"""
+    bl_idname = "moblend.group_effector"
+    bl_label = "Group Effector"
+
+    def run(self, ctx):
+        members = [o for o in ctx.selected_objects if api.mb_kind(o) == Kind.EFFECTOR]
+        if not members:
+            return self.fail("Select the effectors to group")
+        return api.add_group_effector(members, location=ctx.scene.cursor.location.copy())
 
 
 class MB_OT_link_field(_MBOperator):
@@ -296,18 +312,23 @@ class MB_OT_rebuild(_MBOperator):
 
 # ------------------------------------------------------------------ menus
 
-def _operator_menu(idname, label, operator, prop, names, icons):
-    """Menu with one `operator` entry per name, setting `prop` to it."""
+def _operator_menu(idname, label, operator, prop, names, icons, extra=()):
+    """Menu with one `operator` entry per name, setting `prop` to it, then `extra` (operator, text, icon)."""
     def draw(self, ctx):
         for n in names:
-            setattr(self.layout.operator(operator, text=n.title(), icon=icons[n]), prop, n)
+            setattr(self.layout.operator(operator, text=n.replace("_", " ").title(), icon=icons[n]), prop, n)
+        if extra:
+            self.layout.separator()
+        for op, text, icon in extra:
+            self.layout.operator(op, text=text, icon=icon)
     return type(idname, (bpy.types.Menu,), {"bl_idname": idname, "bl_label": label, "draw": draw})
 
 
 MB_MT_cloners = _operator_menu("MB_MT_cloners", "Cloner", "moblend.add_cloner", "mode", CLONER_MODES, CLONER_ICONS)
 MB_MT_effectors = _operator_menu("MB_MT_effectors", "Effectors", "moblend.add_effector", "type", EFFECTOR_TYPES,
-                                 EFFECTOR_ICONS)
-MB_MT_fields = _operator_menu("MB_MT_fields", "Fields", "moblend.add_field", "shape", FIELD_SHAPES, FIELD_ICONS)
+                                 EFFECTOR_ICONS, [("moblend.group_effector", "Group (selected effectors)",
+                                                   "OUTLINER_COLLECTION")])
+MB_MT_fields = _operator_menu("MB_MT_fields", "Fields", "moblend.add_field", "shape", FIELD_KINDS, FIELD_ICONS)
 MB_MT_deformers = _operator_menu("MB_MT_deformers", "Deformers", "moblend.add_deformer", "type", DEFORMER_TYPES,
                                  DEFORMER_ICONS)
 
@@ -548,6 +569,6 @@ CLASSES = (MB_OT_add_cloner, MB_OT_add_effector, MB_OT_add_deformer, MB_OT_add_g
            MB_OT_volume_builder, MB_OT_volume_members, MB_OT_loft,
            MB_OT_cloner_mode,
            MB_OT_link, MB_OT_move_effector, MB_OT_color_material, MB_OT_bridge, MB_OT_rebuild,
-           MB_OT_add_field, MB_OT_link_field,
+           MB_OT_add_field, MB_OT_link_field, MB_OT_group_effector,
            MB_MT_cloners, MB_MT_effectors, MB_MT_deformers, MB_MT_fields, MB_MT_generators, MB_MT_add,
            MB_PT_main, MB_PT_bridge, MB_Prefs)

@@ -7,9 +7,12 @@ them updates every cloner it is linked to (see api/effector.py).
 
 import math
 
-from ..catalog import COLOR_ATTR
+import bpy
+
+from ..catalog import COLOR_ATTR, KEY_VERSION
+from .core import TEXTURE_INPUTS, apply, falloff_group, sound_level, texture
+from .formula import compile_expr
 from .util import S, out
-from .core import apply, falloff_group
 
 PARAMS = [
     S("Position", "VECTOR", (0, 0, 0), subtype="TRANSLATION"),
@@ -19,6 +22,9 @@ PARAMS = [
     S("Color", "COLOR", (1.0, 0.35, 0.1, 1.0)),
     S("Color Mix", "FLOAT", 0.0, 0.0, 1.0, "FACTOR", "How much the effector paints its color"),
     S("Local Space", "BOOL", True, desc="Move clones along their own axes"),
+    S("Visibility", "BOOL", False, desc="Hide clones where the effect is over 50%"),
+    S("Deformation", "MENU", desc="Also act on plain meshes: Point (move points), Polygon (each face as a "
+                                  "clone) or Object (the whole mesh as one clone)"),
 ]
 
 
@@ -30,11 +36,13 @@ def _apply(b, g, geo, weight, position=None, rotation=None, scale=None, color=No
     n = b.group(apply(), {"Instances": geo, "Weight": weight,
                           "Position": position or g["Position"], "Rotation": rotation or g["Rotation"],
                           "Scale": scale, "Color": color or g["Color"],
-                          "Color Mix": g["Color Mix"], "Local Space": g["Local Space"]})
+                          "Color Mix": g["Color Mix"], "Local Space": g["Local Space"],
+                          "Visibility": g["Visibility"], "Deformation": g["Deformation"]})
     return n.outputs[0]
 
 
 def _effector(name, extra, body, falloff="Infinite", menus=None, params=True):
+    menus = {**({"Deformation": "Off"} if params else {}), **(menus or {})}
     return falloff_group(name, "Instances", (PARAMS if params else []) + extra, body, falloff, menus, selection=True)
 
 
@@ -169,22 +177,112 @@ def _inheritance(b, g, w):
 
 def _sound(b, g, w):
     """Weight by the loudness of a frequency band: every clone its own band (Spread) or all the same."""
-    n = b.instance_count(g["Instances"])
-    ratio = b.math("DIVIDE", g["High"], b.at_least(g["Low"], 1.0))
-
-    def band_edge(i):
-        """Log-spaced band edge: Low * (High/Low)^(i/n)."""
-        return b.math("MULTIPLY", g["Low"], b.math("POWER", ratio, b.math("DIVIDE", i, b.at_least(n))))
-
-    spread = b.compare(b.menu(["Spread", "All"], g["Mode"]), 0)
-    idx = b.index()
-    lo = b.mix("FLOAT", spread, g["Low"], band_edge(idx))
-    hi = b.mix("FLOAT", spread, g["High"], band_edge(b.math("ADD", idx, 1.0)))
-    amp = b.node("GeometryNodeSampleSoundFrequencies", {
-        "Sound": g["Sound"], "Time": b.math("ADD", b.seconds(), g["Time Offset"]), "All Channels": True,
-        "Low": lo, "High": hi}).outputs[0]
-    level = b.math("MINIMUM", b.math("MULTIPLY", amp, g["Gain"]), 1.0)
+    level = sound_level(b, g, b.instance_count(g["Instances"]))
     return _apply(b, g, g["Instances"], b.math("MULTIPLY", w, level))
+
+
+def _formula_body(expr):
+    def body(b, g, w):
+        """Weight x formula. Variables: id, count, t (seconds), f (frame), x y z (clone position)."""
+        x, y, z = b.separate(b.position())
+        env = {"id": b.index(), "count": b.instance_count(g["Instances"]), "t": b.seconds(),
+               "f": b.inp("GeometryNodeInputSceneTime", "Frame"), "x": x, "y": y, "z": z}
+        return _apply(b, g, g["Instances"], b.math("MULTIPLY", w, compile_expr(b, expr, env)))
+    return body
+
+
+DEFAULT_FORMULA = "sin((id / count + t) * tau)"
+FORMULA_VARIABLES = ("id", "count", "t", "f", "x", "y", "z")
+
+
+def formula_group(name, expr):
+    """Type group for one Formula effector (each has its own formula); rebuilt when the formula changes."""
+    stale = bpy.data.node_groups.get(name)
+    if stale is not None:
+        stale[KEY_VERSION] = -1
+    return _effector(name, [], _formula_body(expr))()
+
+
+def _shader(b, g, w):
+    """Weight x texture value; optionally paints the texture color."""
+    value, color = texture(b, g, b.to_local(b.position(), g["Transform"]))
+    return _apply(b, g, g["Instances"], b.math("MULTIPLY", w, value),
+                  color=b.mix("RGBA", g["Use Texture Color"], g["Color"], color))
+
+
+def _spline(b, g, w):
+    """Pull clone i to the point at Start + (End-Start) * i/(n-1) + Offset along the curve."""
+    crv = b.object_geometry(g["Curve"])
+    t = b.math("DIVIDE", b.index(), b.steps(b.instance_count(g["Instances"])))
+    f = b.math("ADD", b.math("MULTIPLY_ADD", t, b.math("SUBTRACT", g["End"], g["Start"]), g["Start"]), g["Offset"])
+    f = b.mix("FLOAT", g["Loop"], b.math("MINIMUM", b.math("MAXIMUM", f, 0.0), 1.0), b.math("FRACT", f))
+    smp = b.node("GeometryNodeSampleCurve", {"Curves": crv, "Factor": f}, mode="FACTOR", use_all_curves=True)
+    pos, rot, scale = b.instance_trs()
+    follow = b.node("FunctionNodeAxesToRotation", {"Primary Axis": out(smp, "Tangent"),
+                                                   "Secondary Axis": out(smp, "Normal")},
+                    primary_axis="X", secondary_axis="Z").outputs[0]
+    m = b.combine_transform(b.mix("VECTOR", w, pos, out(smp, "Position")),
+                            b.mix("ROTATION", b.math("MULTIPLY", w, g["Align"]), rot, follow), scale)
+    geo = b.node("GeometryNodeSetInstanceTransform", {"Instances": g["Instances"], "Transform": m}).outputs[0]
+    return _apply(b, g, geo, w)
+
+
+def _volume(b, g, w):
+    """Only clones inside another object's volume (signed distance < 0), with a soft edge."""
+    sdf = b.node("GeometryNodeMeshToSDFGrid", {"Mesh": b.object_geometry(g["Volume"]), "Voxel Size": g["Voxel Size"],
+                                                "Band Width": 3}).outputs[0]
+    d = b.node("GeometryNodeSampleGrid", {"Grid": sdf, "Position": b.position()}, data_type="FLOAT").outputs[0]
+    inside = b.map_range(d, b.math("MULTIPLY", b.at_least(g["Softness"], 1e-4), -1.0), 0.0, 1.0, 0.0)
+    return _apply(b, g, g["Instances"], b.math("MULTIPLY", w, inside))
+
+
+def _push_apart(b, g, w):
+    """Push overlapping clones apart (Iterations relaxation passes), or hide the overlapping ones.
+
+    Each pass moves every clone away from its nearest neighbour by half the overlap: O(Iterations x n log n).
+    """
+    inst = g["Instances"]
+    pts = b.node("GeometryNodeInstancesToPoints", {"Instances": inst}).outputs[0]
+    diameter = b.math("MULTIPLY", g["Radius"], 2.0)
+
+    def nearest(geo):
+        n = b.node("GeometryNodeIndexOfNearest")
+        npos = b.node("GeometryNodeSampleIndex", {"Geometry": geo, "Value": b.position(),
+                                                  "Index": out(n, "Index")},
+                      data_type="FLOAT_VECTOR", domain="POINT").outputs[0]
+        return out(n, "Index"), out(n, "Has Neighbor"), b.vmath("SUBTRACT", b.position(), npos)
+
+    rep_in, rep_out = b.node("GeometryNodeRepeatInput"), b.node("GeometryNodeRepeatOutput")
+    rep_in.pair_with_output(rep_out)
+    b.set(rep_in, "Iterations", g["Iterations"])
+    b.link(pts, _pick_geometry(rep_in.inputs))
+    state = _pick_geometry(rep_in.outputs)
+    _, has, away = nearest(state)
+    overlap = b.math("MAXIMUM", b.math("SUBTRACT", diameter, b.vmath("LENGTH", away)), 0.0)
+    # Coincident clones have no direction between them: give each its own random one so they separate.
+    jitter = b.vmath("NORMALIZE", b.rand("FLOAT_VECTOR", (-1, -1, -1), (1, 1, 1), seed=17))
+    direction = b.mix("VECTOR", b.math("LESS_THAN", b.vmath("LENGTH", away), 1e-6), b.vmath("NORMALIZE", away), jitter)
+    push = b.vmath("SCALE", direction, scale=b.math("MULTIPLY", b.math("MULTIPLY", overlap, 0.5), has))
+    b.link(b.node("GeometryNodeSetPosition", {"Geometry": state, "Offset": push}).outputs[0],
+           _pick_geometry(rep_out.inputs))
+    relaxed = b.node("GeometryNodeSampleIndex", {"Geometry": _pick_geometry(rep_out.outputs), "Value": b.position(),
+                                                 "Index": b.index()},
+                     data_type="FLOAT_VECTOR", domain="POINT").outputs[0]
+    pos, rot, scale = b.instance_trs()
+    pushed = b.node("GeometryNodeSetInstanceTransform", {"Instances": inst, "Transform": b.combine_transform(
+        b.mix("VECTOR", w, pos, relaxed), rot, scale)}).outputs[0]
+    # Hide: a clone vanishes when it overlaps a neighbour with a lower index (so one of each pair stays).
+    first, has0, away0 = nearest(pts)
+    clash = b.math("MULTIPLY", b.math("LESS_THAN", b.vmath("LENGTH", away0), diameter),
+                   b.math("MULTIPLY", has0, b.math("LESS_THAN", first, b.index())))
+    hidden = b.node("GeometryNodeScaleInstances", {"Instances": inst, "Scale": b.math(
+        "SUBTRACT", 1.0, b.math("MULTIPLY", clash, b.math("GREATER_THAN", w, 0.5))), "Local Space": True}).outputs[0]
+    geo = b.index_switch("GEOMETRY", b.menu(["Push Apart", "Hide"], g["Mode"]), [pushed, hidden])
+    return _apply(b, g, geo, w)
+
+
+def _pick_geometry(sockets):
+    return next(s for s in sockets if s.type == "GEOMETRY")
 
 
 _plain_builder = _effector("MB Effector Plain", [], _plain, falloff="Sphere")
@@ -218,6 +316,25 @@ BUILDERS = {
         S("Source", "OBJECT", desc="Cloner (or other instancer) whose clone transforms to inherit"),
         S("Inherit Color", "BOOL", True, desc="Also blend toward the source clones' colors"),
     ], _inheritance, params=False),
+    "formula": lambda: formula_group("MB Effector Formula", DEFAULT_FORMULA),
+    "shader": _effector("MB Effector Shader", TEXTURE_INPUTS + [
+        S("Use Texture Color", "BOOL", False, desc="Paint clones with the texture's color (uses Color Mix)")],
+        _shader, menus={"Texture": "Noise"}),
+    "spline": _effector("MB Effector Spline", [
+        S("Curve", "OBJECT", desc="Curve the clones are pulled onto"),
+        S("Start", "FLOAT", 0.0, 0.0, 1.0, "FACTOR"), S("End", "FLOAT", 1.0, 0.0, 1.0, "FACTOR"),
+        S("Offset", "FLOAT", 0.0, desc="Slide along the curve (animate for motion)"),
+        S("Loop", "BOOL", False, desc="Wrap around instead of stopping at the ends"),
+        S("Align", "BOOL", True, desc="Rotate clones to follow the curve")], _spline),
+    "volume": _effector("MB Effector Volume", [
+        S("Volume", "OBJECT", desc="Closed mesh: only clones inside it are affected"),
+        S("Voxel Size", "FLOAT", 0.05, 0.002, subtype="DISTANCE"),
+        S("Softness", "FLOAT", 0.0, 0.0, subtype="DISTANCE", desc="Fade in over this distance inside the surface")],
+        _volume),
+    "push_apart": _effector("MB Effector Push Apart", [
+        S("Mode", "MENU", desc="Push Apart moves overlapping clones; Hide hides them"),
+        S("Radius", "FLOAT", 0.5, 0.0, subtype="DISTANCE", desc="Clone size: closer than 2x Radius overlaps"),
+        S("Iterations", "INT", 10, 0, 200)], _push_apart, menus={"Mode": "Push Apart"}),
     "sound": _effector("MB Effector Sound", [
         S("Sound", "SOUND", desc="Audio to listen to (name, or a file path via set_params)"),
         S("Mode", "MENU", desc="Spread: each clone gets its own frequency band. All: whole range for every clone"),

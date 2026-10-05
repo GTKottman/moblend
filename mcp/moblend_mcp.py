@@ -97,14 +97,26 @@ TOOLS = [
     tool("add_effector", "Add an effector and link it to cloners/MoText/fractured objects. " + EFFECTOR_DOC,
          {"type": enum(C.EFFECTOR_TYPES), "cloners": names("Targets to affect"), "params": PARAMS,
           "location": VEC, "size": {"type": "number", "description": "Falloff radius (object scale)"},
-          "falloff": enum(C.FALLOFF_SHAPES), "name": STR}, ["type"]),
+          "falloff": enum(C.FALLOFF_SHAPES), "name": STR,
+          "formula": {"type": "string", "description": "formula effectors: weight expression, e.g. "
+                      "'sin((id / count + t) * tau)'; variables id count t f x y z"}}, ["type"]),
+    tool("add_group_effector",
+         "Group effector / ReEffector: one object whose Strength (Opacity), falloff and fields scale several "
+         "effectors at once; linking it to a cloner links all its members.",
+         {"effectors": names("Member effectors"), "cloners": names(), "falloff": enum(C.FALLOFF_SHAPES),
+          "name": STR, "params": PARAMS, "location": VEC, "size": NUM}, ["effectors"]),
     tool("add_field",
-         "Add a Field (C4D field list layer): a shape object sized by its scale, linked into effectors' or GN "
-         "deformers' field lists. Layers combine top to bottom by Blend (Multiply, Max = union, Min = "
-         "intersection, Add, Subtract) and Opacity. The owner's own falloff switches to Infinite on its first "
-         "field. Params: Falloff, Inner, Invert, Noise Scale/Speed, Blend, Opacity.",
-         {"shape": enum(C.FALLOFF_SHAPES[1:]), "effectors": names("Effectors / GN deformers to add it to"),
-          "params": PARAMS, "location": VEC, "size": NUM, "blend": enum(C.FIELD_BLENDS), "name": STR}, ["shape"]),
+         "Add a Field (C4D field list layer) to effectors', GN deformers' or Group fields' lists. Kinds: shapes "
+         "(Sphere, Box, Cylinder, Cone, Capsule, Torus, Linear, Radial, Noise, Random; sized by the object's "
+         "scale), Solid, Group (holds its own field list), Time (Speed, Offset, Mode Loop/Ping-Pong/Clamp), Step "
+         "(index ramp), Object (distance to an object/curve: Object, Mode, Distance), Shader (Texture "
+         "Noise/Voronoi/Wave/Gradient/Checker/Magic/Image, Scale, Detail, Speed, Contrast), Sound, Formula (x y z "
+         "id count t f). Every field: Blend (Normal, Multiply, Max, Min, Add, Subtract, Screen, Average, "
+         "Difference), Opacity, Invert, Contour (None/Quadratic/Ease/Step/Quantize + Steps), Remap Min/Max. "
+         "The owner's own falloff switches to Infinite on its first field.",
+         {"kind": enum(C.FIELD_KINDS), "effectors": names("Owners to add it to"), "params": PARAMS,
+          "location": VEC, "size": NUM, "blend": enum(C.FIELD_BLENDS), "name": STR,
+          "formula": {"type": "string", "description": "Formula fields only"}}, ["kind"]),
     tool("link_field", "Append an existing field to an effector's / GN deformer's field list.",
          {"field": OBJ, "owner": OBJ}, ["field", "owner"]),
     tool("unlink_field", "Remove a field from an effector's / GN deformer's field list.",

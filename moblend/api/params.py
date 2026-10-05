@@ -13,17 +13,18 @@ import bpy
 from ..catalog import KEY_GROUP, KEY_TYPE, PARAMS_NODE, Kind
 from .objects import get_object, mb_kind, mb_modifiers, norm, vec3
 
-_SKIP = {"Geometry", "Instances", "Transform", "Layers", "Previous", "First"}  # wired internally, never user-facing
+_SKIP = {"Geometry", "Instances", "Transform", "Layers", "Previous", "First", "Element Count"}  # wired internally
 _KIND = {"NodeSocketFloat": "FLOAT", "NodeSocketInt": "INT", "NodeSocketBool": "BOOL",
          "NodeSocketVector": "VECTOR", "NodeSocketColor": "COLOR", "NodeSocketString": "STRING",
          "NodeSocketObject": "OBJECT", "NodeSocketCollection": "COLLECTION", "NodeSocketMaterial": "MATERIAL",
          "NodeSocketFont": "FONT", "NodeSocketMenu": "MENU", "NodeSocketRotation": "ROTATION",
-         "NodeSocketSound": "SOUND"}
+         "NodeSocketSound": "SOUND", "NodeSocketImage": "IMAGE"}
 _ID_COLLECTIONS = {"OBJECT": "objects", "COLLECTION": "collections", "MATERIAL": "materials", "FONT": "fonts",
-                   "SOUND": "sounds", "TEXTURE": "textures"}
+                   "SOUND": "sounds", "TEXTURE": "textures", "IMAGE": "images"}
 # ID kinds that can also be given as a file path -> (extensions, bpy.data collection to load into).
 _LOADABLE = {"FONT": (".ttf", ".otf", ".pfb", ".woff", ".woff2"),
-             "SOUND": (".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".opus")}
+             "SOUND": (".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".opus"),
+             "IMAGE": (".png", ".jpg", ".jpeg", ".exr", ".tif", ".tiff", ".webp", ".bmp", ".hdr")}
 _TRANSFORM = {"location": "location", "size": "scale", "objectrotation": "rotation_euler",
               "objectscale": "scale", "rotation": "rotation_euler", "scale": "scale"}
 _FALLOFF_DISPLAY = {"Sphere": "SPHERE", "Box": "CUBE", "Cylinder": "CIRCLE", "Linear": "SINGLE_ARROW"}
@@ -172,13 +173,13 @@ def _node_params(node):
     return _socket_params(node.node_tree, holder, "default_value")
 
 
-# RNA property groups that hold extra parameters, registered by feature modules (avoids import cycles):
-# (applies(obj) -> bool, holder(obj) -> PropertyGroup, group name, on_change(obj) or None)
-RNA_SOURCES = []
+# Extra parameter providers registered by feature modules (avoids import cycles):
+# (applies(obj) -> bool, params(obj) -> [Param]).
+PARAM_SOURCES = []
 _RNA_KIND = {"BOOLEAN": "BOOL", "INT": "INT", "FLOAT": "FLOAT", "ENUM": "MENU", "STRING": "STRING"}
 
 
-def _rna_params(holder, group, on_change):
+def rna_params(holder, group, on_change):
     """Params for every property of an RNA struct (e.g. a PropertyGroup). O(properties)."""
     res = []
     for prop in holder.bl_rna.properties:
@@ -203,16 +204,17 @@ def list_params(ref, modifier=None):
     """All editable parameters of a MoBlend object, primary modifier first. O(P)."""
     o = get_object(ref)
     k = mb_kind(o)
-    if k in (Kind.EFFECTOR, Kind.DEFORMER, Kind.LOFT, Kind.FIELD):  # parameters live on the wrapper's Params node
-        return _node_params(o[KEY_GROUP].nodes[PARAMS_NODE])
-    if k == Kind.SIMPLE_DEFORMER:
-        return [Param(key, o, f'["{key}"]', "FLOAT", "ANGLE" if key == "Angle" else None)
-                for key in ("Angle", "Factor") if key in o]
     want = norm(modifier) if modifier else None
-    res = [p for m in mb_modifiers(o) if want is None or want in norm(m.name) for p in _modifier_params(m)]
-    for applies, holder, group, on_change in RNA_SOURCES:
-        if (want is None or want in norm(group)) and applies(o):
-            res += _rna_params(holder(o), group, on_change)
+    if k in (Kind.EFFECTOR, Kind.DEFORMER, Kind.LOFT, Kind.FIELD):  # parameters live on the wrapper's Params node
+        res = _node_params(o[KEY_GROUP].nodes[PARAMS_NODE])
+    elif k == Kind.SIMPLE_DEFORMER:
+        res = [Param(key, o, f'["{key}"]', "FLOAT", "ANGLE" if key == "Angle" else None)
+               for key in ("Angle", "Factor") if key in o]
+    else:
+        res = [p for m in mb_modifiers(o) if want is None or want in norm(m.name) for p in _modifier_params(m)]
+    for applies, make in PARAM_SOURCES:
+        if applies(o):
+            res += [p for p in make(o) if want is None or (p.group and want in norm(p.group))]
     return res
 
 

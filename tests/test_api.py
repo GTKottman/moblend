@@ -299,6 +299,135 @@ def selection_pattern_limits_effect():
     assert _heights(c) == [1, 1, 0, 0, 0, 1, 1, 1]
 
 
+def _line(count=5, offset=(1, 0, 0)):
+    return api.create_cloner("linear", params={"Count": count, "Offset": list(offset)}, location=(0, 0, 0))
+
+
+def _lift(cloners, **kw):
+    params = {"Position": [0, 0, 1], "Local Space": False, **kw.pop("params", {})}
+    return api.add_effector(kw.pop("type", "plain"), cloners=cloners, params=params, **kw)
+
+
+@case
+def new_falloff_shapes():
+    c = api.create_cloner("radial", params={"Count": 4, "Radius": 2, "Align": False}, location=(0, 0, 0))
+    _lift([c], falloff="Radial", params={"Position": [0, 0, 4]})
+    assert sorted(_heights(c)) == [0, 1, 2, 3], _heights(c)  # weight = angle / 360
+    c2 = _line(4, (0.75, 0, 0))
+    _lift([c2], falloff="Torus", size=2.0, location=(0, 5, 0))
+    _lift([c2], falloff="Torus", size=2.0)  # ring of radius 1.5 through x = 1.5
+    assert _heights(c2)[0] == 0 and _heights(c2)[2] == 1.0, _heights(c2)
+
+
+@case
+def field_layer_types():
+    sc = bpy.context.scene
+    c = _line(5)
+    e = _lift([c], falloff="Infinite")
+    step = api.add_field("Step", effectors=[e])
+    assert _heights(c) == [0, 0.25, 0.5, 0.75, 1.0], _heights(c)
+    api.set_params(step, {"Contour": "Quantize", "Steps": 2})
+    assert _heights(c) == [0, 0, 1.0, 1.0, 1.0], _heights(c)  # two levels, split at 0.5
+    api.delete(step)
+    t = api.add_field("Time", effectors=[e], params={"Speed": 0.5})
+    sc.frame_set(1)
+    a = _heights(c)[0]
+    sc.frame_set(1 + sc.render.fps)
+    assert abs(_heights(c)[0] - a - 0.5) < 1e-3  # half a cycle per second
+    api.delete(t)
+    f = api.add_field("Formula", effectors=[e], formula="x / 4", size=1)  # x is in the field's own space
+    assert _heights(c) == [0, 0.25, 0.5, 0.75, 1.0], _heights(c)
+    api.set_params(f, {"Formula": "1 - x / 4"})
+    assert _heights(c) == [1.0, 0.75, 0.5, 0.25, 0], _heights(c)
+    try:
+        api.set_params(f, {"Formula": "__import__('os')"})
+        raise AssertionError("unsafe formula accepted")
+    except ValueError:
+        pass
+    api.delete(f)
+    bpy.ops.curve.primitive_bezier_curve_add(location=(2, 0, 0), rotation=(0, math.pi / 2, 0))
+    near_curve = api.add_field("Object", effectors=[e], params={"Object": bpy.context.object.name, "Distance": 0.5})
+    z = _heights(c)
+    assert z[2] > 0.5 and z[0] == 0 and z[4] == 0, z  # only the clone by the (slightly bent) curve
+    group = api.add_field("Group")
+    api.unlink_field(near_curve, e)
+    api.link_field(near_curve, group)
+    api.link_field(group, e)
+    assert _heights(c)[2] > 0.5 and api.fields_of(group) == [near_curve.name]
+    try:
+        api.link_field(group, group)
+        raise AssertionError("cycle accepted")
+    except ValueError:
+        pass
+
+
+@case
+def shader_and_sound_fields():
+    c = _line(4, (1, 0, 0))
+    e = _lift([c], falloff="Infinite")
+    api.add_field("Shader", effectors=[e], params={"Texture": "Gradient"}, location=(1.5, 0, 0), size=1.5)
+    assert _heights(c) == [0, 0.33, 0.67, 1.0], _heights(c)  # gradient along the field's X
+    c2 = _line(10)
+    e2 = _lift([c2], falloff="Infinite")
+    api.add_field("Sound", effectors=[e2], params={"Sound": _tone(440), "Mode": "Spread"})
+    bpy.context.scene.frame_set(30)
+    z = _heights(c2)
+    assert z[4] > 0.9 and max(z[:4] + z[5:]) < 0.1, z
+
+
+@case
+def formula_spline_volume_and_shader_effectors():
+    c = _line(5)
+    e = _lift([c], type="formula", formula="id / (count - 1)")
+    assert _heights(c) == [0, 0.25, 0.5, 0.75, 1.0], _heights(c)
+    api.set_params(e, {"Formula": "1"})
+    assert _heights(c) == [1.0] * 5, _heights(c)
+    api.delete(e)
+    bpy.ops.curve.primitive_bezier_circle_add(radius=3, location=(0, 0, 5))
+    ring = bpy.context.object
+    api.add_effector("spline", cloners=[c], params={"Curve": ring.name, "Loop": True, "End": 0.8})
+    assert all(abs(x.translation.z - 5) < 1e-3 and abs((x.translation.xy - Vector((0, 0))).length - 3) < 0.05
+               for x in instances(c)), [x.translation for x in instances(c)]
+    c3 = _line(6)
+    bpy.ops.mesh.primitive_cube_add(size=2.2, location=(1, 0, 0))
+    api.add_effector("volume", cloners=[c3], params={"Volume": bpy.context.object.name, "Position": [0, 0, 1],
+                                                    "Local Space": False})
+    assert _heights(c3) == [1.0, 1.0, 1.0, 0, 0, 0], _heights(c3)
+    c4 = _line(4)
+    api.add_effector("shader", cloners=[c4], params={"Texture": "Checker", "Scale": 1.5, "Position": [0, 0, 1],
+                                                    "Local Space": False}, falloff="Infinite", size=1,
+                     location=(0, 0.25, 0.25))  # cells: floor(1.5 x) = 0, 1, 3, 4
+    assert len(set(_heights(c4))) == 2, _heights(c4)  # checker: alternating on / off
+
+
+@case
+def push_apart_group_visibility_minmax_deformation():
+    c = _line(6, (0.2, 0, 0))
+    api.add_effector("push_apart", cloners=[c], params={"Radius": 0.5, "Iterations": 40})
+    pts = [x.translation for x in instances(c)]
+    gap = min((p - q).length for i, p in enumerate(pts) for q in pts[i + 1:])
+    assert gap > 0.99, gap  # 0.2 apart before; at least 2 x Radius after
+    c2 = _line(4)
+    lift = _lift([c2], falloff="Infinite")
+    group = api.add_group_effector([lift], params={"Opacity": 0.5})
+    assert _heights(c2) == [0.5] * 4 and api.group_members(group) == [lift]
+    c3 = _line(4)
+    api.link_effector(group, c3)  # linking the group links its members
+    assert _heights(c3) == [0.5] * 4
+    c4 = _line(4)
+    _lift([c4], falloff="Infinite", params={"Minimum": -1, "Maximum": -1})
+    assert _heights(c4) == [-1.0] * 4
+    c5 = _line(4)
+    api.add_effector("plain", cloners=[c5], falloff="Infinite", params={"Visibility": True})
+    assert all(x.to_scale().length < 1e-6 for x in instances(c5))
+    bpy.ops.mesh.primitive_plane_add(size=2)
+    plane = bpy.context.object
+    e = api.add_effector("plain", cloners=[plane], falloff="Infinite",
+                         params={"Position": [0, 0, 1], "Deformation": "Point", "Local Space": False})
+    ev = plane.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    assert all(abs(v.co.z - 1) < 1e-4 for v in ev.data.vertices) and e
+
+
 @case
 def delay_effector_lags():
     sc = bpy.context.scene

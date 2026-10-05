@@ -9,7 +9,8 @@ from .objects import get_object, mb_kind, users_of  # noqa: F401
 from .params import Param, get_params, list_params, parse_color, set_params  # noqa: F401
 from .material import assign as assign_material, mograph_material, set_color_material, solid_material  # noqa: F401
 from .cloner import add_clone_objects, create_cloner, set_cloner_mode  # noqa: F401
-from .effector import add_effector, effectors_of, link_effector, move_effector, unlink_effector  # noqa: F401
+from .effector import (add_effector, add_group_effector, effectors_of, group_members, link_effector,  # noqa: F401
+                       move_effector, unlink_effector)
 from .deformer import add_deformer, attach_deformer  # noqa: F401
 from .generator import (add_boole, add_extrude, add_fracture, add_lathe, add_subdivision,  # noqa: F401
                         add_symmetry, add_tracer, add_volume_objects, create_motext, create_sweep,

@@ -107,7 +107,8 @@ objs = {
 }
 api.add_effector("plain", name="P2", cloners=["T"])
 expect = {"cloner": ["Count X", "Spacing", "Radius", "R"],
-          "effector": ["Strength", "Falloff", "Seed", "Mode", "Select Every", "Fields (top to bottom)"],
+          "effector": ["Strength", "Falloff", "Seed", "Mode", "Select Every", "Fields (top to bottom)", "Minimum",
+                       "Visibility"],
           "deformer": ["Amplitude", "Falloff"], "simple": ["Angle"], "motext": ["Text", "Split", "P2"],
           "voronoi": ["Point Amount", "Distribution", "Offset Fragments", "Sort Result", "Enable Detailing",
                       "Glue", "Mode", "Colorize"],

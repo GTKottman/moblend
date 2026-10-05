@@ -9,7 +9,8 @@ import bpy
 
 from ..catalog import GROUP_PREFIX, KEY_GROUP, KEY_KIND, KEY_PROFILES, PARAMS_NODE, Kind
 from ..nodes import generators
-from .objects import add_nodes_modifier, get_object, get_objects, new_mesh_object, select_only, tag
+from .objects import (add_nodes_modifier, get_object, get_objects, new_mesh_object, restore_socket_values,
+                      select_only, socket_values, tag)
 from .params import set_params
 
 LOFT_GROUP_PREFIX = "MBLF "
@@ -64,11 +65,8 @@ def set_loft_profiles(ref, profiles):
     o = get_object(ref)
     ng = o[KEY_GROUP]
     old = ng.nodes.get(PARAMS_NODE)
-    keep = {s.identifier: s.default_value for s in old.inputs if hasattr(s, "default_value")} if old else {}
-    params = _fill_wrapper(ng, get_objects(profiles))
-    for s in params.inputs:
-        if s.identifier in keep and not s.is_linked:
-            s.default_value = keep[s.identifier]
+    keep = socket_values(old) if old else {}
+    restore_socket_values(_fill_wrapper(ng, get_objects(profiles)), keep)
     o[KEY_PROFILES] = [p.name for p in get_objects(profiles)]
     o.update_tag()
     return list(o[KEY_PROFILES])

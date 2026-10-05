@@ -10,9 +10,15 @@ import tempfile
 VERSION = "0.2.0"  # bl_info and blender_manifest.toml must match (Blender reads them as literals; a test checks)
 
 CLONER_MODES = ("linear", "radial", "grid", "object", "spline")
-EFFECTOR_TYPES = ("plain", "random", "step", "noise", "wave", "time", "target", "delay", "inheritance", "sound")
-FALLOFF_SHAPES = ("Infinite", "Sphere", "Box", "Cylinder", "Linear", "Noise", "Random")
-FIELD_BLENDS = ("Multiply", "Max", "Min", "Add", "Subtract")
+EFFECTOR_TYPES = ("plain", "random", "step", "noise", "wave", "time", "target", "delay", "inheritance", "sound",
+                  "formula", "shader", "spline", "volume", "push_apart")
+FALLOFF_SHAPES = ("Infinite", "Sphere", "Box", "Cylinder", "Cone", "Capsule", "Torus", "Linear", "Radial", "Noise",
+                  "Random")
+FIELD_BLENDS = ("Normal", "Multiply", "Max", "Min", "Add", "Subtract", "Screen", "Average", "Difference")
+# Field object kinds: falloff shapes ("Solid" = Infinite, "Group" = Infinite holding its own field list)
+# plus layer types.
+FIELD_KINDS = ("Solid", "Group") + tuple(s for s in FALLOFF_SHAPES if s != "Infinite") + (
+    "Time", "Step", "Object", "Shader", "Sound", "Formula")
 SIMPLE_DEFORMERS = {"bend": "BEND", "twist": "TWIST", "taper": "TAPER", "stretch": "STRETCH"}
 GN_DEFORMERS = ("wave", "spherify", "shear", "bulge", "displace")
 DEFORMER_TYPES = tuple(SIMPLE_DEFORMERS) + GN_DEFORMERS

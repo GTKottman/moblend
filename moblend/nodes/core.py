@@ -3,7 +3,9 @@
 All groups evaluate in O(elements) per frame unless noted.
 """
 
-from ..catalog import COLOR_ATTR, FALLOFF_SHAPES, FIELD_BLENDS
+import math
+
+from ..catalog import COLOR_ATTR, FALLOFF_SHAPES
 from .util import S, new_group, ensure, set_menu_defaults, out
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
@@ -37,7 +39,12 @@ def falloff():
             return b.map_range(d, inner, 1.0, 1.0, 0.0, "SMOOTHSTEP")
 
         ax, ay, az = b.separate(b.vmath("ABSOLUTE", local))
-        _, _, lz = b.separate(local)
+        lx, ly, lz = b.separate(local)
+        rxy = b.vmath("LENGTH", b.combine(lx, ly))
+        cone_radius = b.at_least(b.math("MULTIPLY", b.math("SUBTRACT", 1.0, lz), 0.5), 1e-4)  # base z=-1, tip z=1
+        capsule = b.vmath("LENGTH", b.combine(lx, ly, b.math("MAXIMUM", b.math("SUBTRACT", az, 0.5), 0.0)))
+        torus = b.vmath("LENGTH", b.combine(b.math("SUBTRACT", rxy, 0.75), lz))  # major 0.75, minor 0.25
+        angle = b.math("ARCTAN2", ly, lx)
         w = b.math("ADD", b.math("MULTIPLY", b.seconds(), g["Noise Speed"]), g["Field Seed"])
         noise = out(b.noise4d(b.vmath("SCALE", local, scale=g["Noise Scale"]), w, detail=1.0), "Factor")
         shapes = {
@@ -45,7 +52,11 @@ def falloff():
             "Sphere": radial(b.vmath("LENGTH", local)),
             "Box": radial(b.math("MAXIMUM", b.math("MAXIMUM", ax, ay), az)),
             "Cylinder": radial(b.math("MAXIMUM", b.vmath("LENGTH", b.combine(ax, ay, 0.0)), az)),
+            "Cone": radial(b.math("MAXIMUM", az, b.math("DIVIDE", rxy, cone_radius))),
+            "Capsule": radial(b.math("DIVIDE", capsule, 0.5)),
+            "Torus": radial(b.math("DIVIDE", torus, 0.25)),
             "Linear": b.map_range(lz, -1.0, 1.0, 0.0, 1.0),
+            "Radial": b.math("FRACT", b.math("ADD", b.math("DIVIDE", angle, 2 * math.pi), 1.0)),  # sweep around Z
             "Noise": b.map_range(noise, 0.3, 0.7, 0.0, 1.0, "SMOOTHSTEP"),
             "Random": b.rand("FLOAT", 0.0, 1.0, seed=g["Field Seed"]),
         }
@@ -66,6 +77,8 @@ SELECTION_INPUTS = [
     S("Invert Selection", "BOOL", False),
 ]
 SELECTION_NAMES = frozenset(s["name"] for s in SELECTION_INPUTS)
+RANGE_INPUTS = [S("Minimum", "FLOAT", 0.0, desc="Effect where the falloff is 0"),
+                S("Maximum", "FLOAT", 1.0, desc="Effect where the falloff is 1")]
 LAYERS_INPUT = "Layers"  # combined weight of linked Field objects, wired by api/field.py (1 = no fields)
 
 
@@ -85,78 +98,134 @@ def falloff_group(name, geo_name, extra, body, falloff_default="Sphere", menus=N
     """Builder for an effector/deformer type group.
 
     Interface: geometry, Transform (placing object), Strength, Layers (field objects), falloff inputs,
-    selection inputs (if `selection`), then `extra`. `body(b, g, weight)` returns the result geometry,
-    where `weight` = falloff x Strength x Layers (x selection) as a field.
+    selection + Minimum/Maximum inputs (if `selection`, i.e. effectors), then `extra`. `body(b, g, weight)`
+    returns the result geometry, where `weight` = remap(falloff) x Strength x Layers (x selection).
     """
     def build():
         head = [S(geo_name, "GEOMETRY"), S("Transform", "MATRIX", hide_value=True),
                 S("Strength", "FLOAT", 1.0, desc="Overall effect amount"),
                 S(LAYERS_INPUT, "FLOAT", 1.0, hide_value=True, desc="Weight from linked Field objects")]
-        inputs = head + FALLOFF_INPUTS + (SELECTION_INPUTS if selection else []) + extra
+        inputs = head + FALLOFF_INPUTS + (SELECTION_INPUTS + RANGE_INPUTS if selection else []) + extra
         ng, gin, gout, b = new_group(name, inputs, [S(geo_name, "GEOMETRY")], desc)
         g = gin.outputs
         fo = b.group(falloff(), {"Transform": g["Transform"]})
         for spec in FALLOFF_INPUTS:
             b.link(g[spec["name"]], fo.inputs[spec["name"]])
-        weight = b.math("MULTIPLY", b.math("MULTIPLY", fo.outputs["Weight"], g["Strength"]), g[LAYERS_INPUT])
-        if selection:
+        weight = b.math("MULTIPLY", fo.outputs["Weight"], g[LAYERS_INPUT])
+        if selection:  # C4D Minimum/Maximum: where the falloff is 0 / 1 (e.g. -1..1 for a two-way effect)
+            weight = b.math("MULTIPLY_ADD", weight, b.math("SUBTRACT", g["Maximum"], g["Minimum"]), g["Minimum"])
             weight = b.math("MULTIPLY", weight, _selection(b, g))
+        weight = b.math("MULTIPLY", weight, g["Strength"])
         b.link(body(b, g, weight), gout.inputs[0])
         set_menu_defaults(ng, {"Falloff": falloff_default, **(menus or {})})
         return ng
     return lambda: ensure(name, build)
 
 
-def field():
-    """One layer of a field list: blends this field's falloff into the weight of the layers before it."""
-    def build():
-        ng, gin, gout, b = new_group(
-            "MB Field",
-            [S("Previous", "FLOAT", 1.0, hide_value=True), S("First", "BOOL", True, hide_value=True),
-             S("Transform", "MATRIX", hide_value=True),
-             S("Blend", "MENU", desc="How this field combines with the fields above it"),
-             S("Opacity", "FLOAT", 1.0, 0.0, 1.0, "FACTOR")] + FALLOFF_INPUTS,
-            [S("Weight", "FLOAT")], "Field layer: weight from a shape, blended with the previous layers")
-        g = gin.outputs
-        fo = b.group(falloff(), {"Transform": g["Transform"]})
-        for spec in FALLOFF_INPUTS:
-            b.link(g[spec["name"]], fo.inputs[spec["name"]])
-        w, prev = fo.outputs["Weight"], g["Previous"]
-        ops = {"Multiply": b.math("MULTIPLY", prev, w), "Max": b.math("MAXIMUM", prev, w),
-               "Min": b.math("MINIMUM", prev, w), "Add": b.math("ADD", prev, w),
-               "Subtract": b.math("SUBTRACT", prev, w)}
-        blended = b.index_switch("FLOAT", b.menu(FIELD_BLENDS, g["Blend"]), [ops[k] for k in FIELD_BLENDS])
-        blended = b.math("MINIMUM", b.math("MAXIMUM", blended, 0.0), 1.0)
-        layered = b.mix("FLOAT", g["Opacity"], prev, blended)
-        b.link(b.switch("FLOAT", g["First"], layered, b.math("MULTIPLY", w, g["Opacity"])), gout.inputs[0])
-        set_menu_defaults(ng, {"Falloff": "Sphere", "Blend": "Multiply"})
-        return ng
-    return ensure("MB Field", build)
+TEXTURES = ("Noise", "Voronoi", "Wave", "Gradient", "Checker", "Magic", "Image")
+TEXTURE_INPUTS = [S("Texture", "MENU", desc="Procedural texture, or Image"), S("Image", "IMAGE"),
+                  S("Scale", "FLOAT", 1.0), S("Detail", "FLOAT", 2.0, 0.0, 15.0),
+                  S("Speed", "FLOAT", 0.0, desc="Animate the texture over time"),
+                  S("Contrast", "FLOAT", 0.0, 0.0, 0.99, "FACTOR")]
+
+
+def texture(b, g, local):
+    """(value 0..1, color) of the chosen texture at `local` (an object-local position; images map local
+    X/Y -1..1 to the whole image). Uses the TEXTURE_INPUTS of `g`."""
+    vec = b.vmath("SCALE", local, scale=g["Scale"])
+    w = b.math("MULTIPLY", b.seconds(), g["Speed"])
+    lx, ly, _ = b.separate(local)
+    image = b.node("GeometryNodeImageTexture", {"Image": g["Image"], "Vector": b.vmath(
+        "MULTIPLY_ADD", b.combine(lx, ly), (0.5, 0.5, 0.5), (0.5, 0.5, 0.0))})
+    noise = b.noise4d(vec, w, g["Detail"])
+    voronoi = b.node("ShaderNodeTexVoronoi", {"Vector": vec, "W": w}, voronoi_dimensions="4D")
+    wave = b.node("ShaderNodeTexWave", {"Vector": vec, "Detail": g["Detail"],
+                                       "Phase Offset": b.math("MULTIPLY", w, 2 * math.pi)})
+    checker = b.node("ShaderNodeTexChecker", {"Vector": vec, "Scale": 1.0, "Color1": (1, 1, 1, 1),
+                                              "Color2": (0, 0, 0, 1)})
+    magic = b.node("ShaderNodeTexMagic", {"Vector": vec})
+    gradient = b.map_range(lx, -1.0, 1.0, 0.0, 1.0)
+    values = [out(noise, "Factor"), out(voronoi, "Distance"), out(wave, "Fac"), gradient, out(checker, "Fac"),
+              out(magic, "Fac"), b.vmath("DOT_PRODUCT", out(image, "Color"), (0.2126, 0.7152, 0.0722))]  # luminance
+    colors = [out(noise, "Color"), out(voronoi, "Color"), out(wave, "Color"), b.combine(gradient, gradient, gradient),
+              out(checker, "Color"), out(magic, "Color"), out(image, "Color")]
+    which = b.menu(TEXTURES, g["Texture"])
+    value = b.index_switch("FLOAT", which, values)
+    half = b.math("MULTIPLY", g["Contrast"], 0.5)
+    return b.map_range(value, half, b.math("SUBTRACT", 1.0, half), 0.0, 1.0), b.index_switch("RGBA", which, colors)
+
+
+def sound_level(b, g, count):
+    """0..1 loudness from inputs Sound/Mode/Low/High/Gain/Time Offset. Spread mode gives element i the
+    log-spaced band Low*(High/Low)^(i/count) .. ^((i+1)/count); All mode uses the whole range."""
+    ratio = b.math("DIVIDE", g["High"], b.at_least(g["Low"], 1.0))
+
+    def band_edge(i):
+        return b.math("MULTIPLY", g["Low"], b.math("POWER", ratio, b.math("DIVIDE", i, b.at_least(count))))
+
+    spread = b.compare(b.menu(["Spread", "All"], g["Mode"]), 0)
+    idx = b.index()
+    lo = b.mix("FLOAT", spread, g["Low"], band_edge(idx))
+    hi = b.mix("FLOAT", spread, g["High"], band_edge(b.math("ADD", idx, 1.0)))
+    amp = b.node("GeometryNodeSampleSoundFrequencies", {
+        "Sound": g["Sound"], "Time": b.math("ADD", b.seconds(), g["Time Offset"]), "All Channels": True,
+        "Low": lo, "High": hi}).outputs[0]
+    return b.math("MINIMUM", b.math("MULTIPLY", amp, g["Gain"]), 1.0)
+
+
+DEFORMATION = ("Off", "Point", "Polygon", "Object")
 
 
 def apply():
+    """Weighted position/rotation/scale/color/visibility on instances. With Deformation, also on plain
+    geometry: Point moves points, Polygon treats every face as a clone, Object the whole mesh. O(elements)."""
     def build():
         ng, gin, gout, b = new_group(
             "MB Apply",
             [S("Instances", "GEOMETRY"), S("Weight", "FLOAT", 1.0),
              S("Position", "VECTOR", (0, 0, 0)), S("Rotation", "VECTOR", (0, 0, 0)),
              S("Scale", "VECTOR", (0, 0, 0)), S("Color", "COLOR", WHITE),
-             S("Color Mix", "FLOAT", 0.0), S("Local Space", "BOOL", True)],
+             S("Color Mix", "FLOAT", 0.0), S("Local Space", "BOOL", True), S("Visibility", "BOOL", False),
+             S("Deformation", "MENU")],
             [S("Instances", "GEOMETRY")],
-            "Weighted position/rotation/scale/color change on instances",
+            "Weighted position/rotation/scale/color change on instances (and meshes via Deformation)",
         )
         g = gin.outputs
         w = g["Weight"]
-        geo = b.node("GeometryNodeTranslateInstances", {
-            "Instances": g["Instances"], "Translation": b.vmath("SCALE", g["Position"], scale=w),
-            "Local Space": g["Local Space"]}).outputs[0]
-        rot = b.euler_to_rot(b.vmath("SCALE", g["Rotation"], scale=w))
-        geo = b.node("GeometryNodeRotateInstances", {"Instances": geo, "Rotation": rot,
-                                                     "Local Space": True}).outputs[0]
-        s = b.vmath("MAXIMUM", b.vmath("MULTIPLY_ADD", g["Scale"], w, (1, 1, 1)), (0, 0, 0))
-        geo = b.node("GeometryNodeScaleInstances", {"Instances": geo, "Scale": s, "Local Space": True}).outputs[0]
-        col = b.mix("RGBA", b.math("MULTIPLY", w, g["Color Mix"]), b.named(COLOR_ATTR, "FLOAT_COLOR"), g["Color"])
-        b.link(b.store(geo, COLOR_ATTR, col, "FLOAT_COLOR", "INSTANCE"), gout.inputs[0])
+
+        def effect(geo):
+            geo = b.node("GeometryNodeTranslateInstances", {
+                "Instances": geo, "Translation": b.vmath("SCALE", g["Position"], scale=w),
+                "Local Space": g["Local Space"]}).outputs[0]
+            rot = b.euler_to_rot(b.vmath("SCALE", g["Rotation"], scale=w))
+            geo = b.node("GeometryNodeRotateInstances", {"Instances": geo, "Rotation": rot,
+                                                         "Local Space": True}).outputs[0]
+            s = b.vmath("MAXIMUM", b.vmath("MULTIPLY_ADD", g["Scale"], w, (1, 1, 1)), (0, 0, 0))
+            hidden = b.math("MULTIPLY", g["Visibility"], b.math("GREATER_THAN", w, 0.5))  # C4D Visibility
+            s = b.vmath("SCALE", s, scale=b.math("SUBTRACT", 1.0, hidden))
+            geo = b.node("GeometryNodeScaleInstances", {"Instances": geo, "Scale": s, "Local Space": True}).outputs[0]
+            col = b.mix("RGBA", b.math("MULTIPLY", w, g["Color Mix"]), b.named(COLOR_ATTR, "FLOAT_COLOR"),
+                        g["Color"])
+            return b.store(geo, COLOR_ATTR, col, "FLOAT_COLOR", "INSTANCE")
+
+        parts = b.node("GeometryNodeSeparateComponents", {"Geometry": g["Instances"]})
+        mesh = out(parts, "Mesh")
+        moved = b.node("GeometryNodeSetPosition", {"Geometry": mesh,
+                                                   "Offset": b.vmath("SCALE", g["Position"], scale=w)}).outputs[0]
+        polys = b.group(split_centered("FACE"), {"Geometry": b.node("GeometryNodeSplitEdges", {"Mesh": mesh}
+                                                                      ).outputs[0],
+                                                  "Group": out(b.node("GeometryNodeInputMeshIsland"), "Island Index")})
+        whole = b.node("GeometryNodeGeometryToInstance", {"Geometry": mesh}).outputs[0]
+
+        def realized(geo):
+            return b.node("GeometryNodeRealizeInstances", {"Geometry": effect(geo)}).outputs[0]
+
+        deformed = b.index_switch("GEOMETRY", b.menu(DEFORMATION, g["Deformation"]),
+                                  [mesh, moved, realized(polys.outputs[0]), realized(whole)])
+        rest = b.join(out(parts, "Curve"), out(parts, "Point Cloud"), out(parts, "Volume"),
+                      out(parts, "Grease Pencil"))
+        b.link(b.join(effect(out(parts, "Instances")), deformed, rest), gout.inputs[0])
+        set_menu_defaults(ng, {"Deformation": "Off"})
         return ng
     return ensure("MB Apply", build)
 
